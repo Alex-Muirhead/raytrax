@@ -1,16 +1,16 @@
-from collections import namedtuple
-from dataclasses import dataclass
-from itertools import product
-from pathlib import Path
 import math
+from collections import deque, namedtuple
+from dataclasses import dataclass
+from itertools import islice, cycle
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from gdtk import lmr
 
-from typing import TYPE_CHECKING
-
 if TYPE_CHECKING:
     from typing import Self
+
     from gdtk.geom.sgrid import StructuredGrid
 
 REPO_ROOT = Path("/home/alex/GDTk/gdtk.robust-python-modules")
@@ -18,7 +18,39 @@ MAX_VERTICES = 4
 SENTINAL = -1
 
 
-def construct_halfspace(vertices: np.ndarray) -> np.ndarray: ...
+def sliding_window(iterable, n):
+    "Collect data into overlapping fixed-length chunks or blocks."
+    # sliding_window('ABCDEFG', 4) → ABCD BCDE CDEF DEFG
+    iterator = iter(iterable)
+    window = deque(islice(iterator, n - 1), maxlen=n)
+    for x in iterator:
+        window.append(x)
+        yield tuple(window)
+
+
+def construct_halfspace(spanning_vertices: np.ndarray) -> (np.ndarray, float):
+    # Assumes the vertices minimally span the dividing (hyper-)plane
+    # Here we assume that each *row* is a vertex / point
+    # We care about the *orientation*, so let's make everything
+    # relative to v0.
+
+    vertices = spanning_vertices.copy()
+    # Because of the cholesky decomposition, the last vector will
+    # be changed the most, while the first is preserved.
+    # So, we remove the *last* vertex, and replace it with ones.
+    anchor = vertices[-1, :].copy()
+    vertices -= anchor
+    vertices[-1, :] = np.ones_like(anchor)
+
+    decomp = np.linalg.cholesky(vertices @ vertices.T)
+    basis = np.linalg.solve(decomp, vertices)
+    # Trim out numbers that are too small and might cause errors
+    basis[np.abs(basis) < 1e3 * np.finfo(basis.dtype).eps] = 0.0
+
+    normal = basis[-1, :]
+    offset = np.vecdot(normal, anchor)
+
+    return normal, offset
 
 
 @dataclass
@@ -39,20 +71,27 @@ class Grid:
 
         match sgrid.dimensions:
             case 2:
+                num_dims = 2
                 facets_per_cell = 4
                 vertices_per_cell = 4
+
+                vertex_coordinates = np.stack(
+                    (sgrid.vertices.x, sgrid.vertices.y), axis=-1
+                ).reshape((num_verts, num_dims))
+
             case 3:
+                num_dims = 3
                 facets_per_cell = 6
                 vertices_per_cell = 8
+
+                vertex_coordinates = np.stack(
+                    (sgrid.vertices.x, sgrid.vertices.y, sgrid.vertices.z), axis=-1
+                ).reshape((num_verts, num_dims))
             case _:
                 raise ValueError("Grid must have 2 or 3 dimensions")
 
-        vertex_coordinates = np.stack(
-            (sgrid.vertices.x, sgrid.vertices.y, sgrid.vertices.z), axis=-1
-        ).reshape((num_verts, 3))
-
-        # EAST, WEST, NORTH, SOUTH
-        neighbour_offsets = np.array([[+1, 0, 0], [-1, 0, 0], [0, +1, 0], [0, -1, 0]])
+        # SOUTH, [FRONT,] EAST, NORTH, [BACK,], WEST
+        neighbour_offsets = np.array([[-1, 0, 0], [0, +1, 0], [+1, 0, 0], [0, -1, 0]])
         # Anti-clockwise from BOTTOM-LEFT
         vertex_offsets = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]])
 
@@ -67,80 +106,50 @@ class Grid:
         cell_connection_list = np.full((num_cells, facets_per_cell), fill_value=SENTINAL)
 
         edge_counter = 0
-        for cell_idx in range(num_cells):
-            (i, j, k) = np.unravel_index(cell_idx, cell_grid_shape)
-
+        for cell_idx, (i, j, k) in enumerate(np.ndindex(cell_grid_shape)):
             vertices = vertex_offsets + (i, j, k)
             vertex_idxs = np.ravel_multi_index(vertices.T, vert_grid_shape)
             cell_vertices[cell_idx, :] = vertex_idxs
 
             neighbours = neighbour_offsets + (i, j, k)
+            neighbour_idxs = np.ravel_multi_index(neighbours.T, cell_grid_shape, mode="wrap")
+            # We can remove this if we want to have "wrapped" domain
+            # Neighbours that are outside [0, length) are invalid
             valid = np.all(
                 np.logical_and(neighbours >= 0, neighbours < cell_grid_shape),
                 axis=1,
             )
-            neighbour_idxs = np.ravel_multi_index(neighbours.T, cell_grid_shape, mode="wrap")
-            # We can remove this if we want to have "wrapped" domain
             neighbour_idxs[~valid] = SENTINAL
             cell_adjacency[cell_idx, :] = neighbour_idxs
 
-            for local_facet_id, neighbour in enumerate(neighbour_idxs):
+            local_connections = []
+            local_vertex_path = sliding_window(cycle([0, 1, 2, 3]), 2)  # Loop first element/s
+
+            for neighbour, facet_span in zip(neighbour_idxs, local_vertex_path):
                 dual_edge = (cell_idx, int(neighbour))
+
                 # Check if the (flipped) dual-edge already exists first
+                # Yes, I could calculate this. It's a pain, this is easier.
                 edge_idx = dual_edge_lookup.get(dual_edge[::-1], edge_counter)
-                cell_connection_list[cell_idx, local_facet_id] = edge_idx
+                local_connections.append(edge_idx)
 
                 if edge_idx != edge_counter:
                     # The edge did already exist
+                    # No need to repeat the definitions
                     continue
 
+                facet_normal, facet_offset = construct_halfspace(
+                    vertex_coordinates[vertex_idxs[list(facet_span)], :]
+                )
+
+                print(facet_normal, facet_offset)
+
+                # Otherwise, define our edge
                 dual_edges[edge_idx] = dual_edge
                 dual_edge_lookup[dual_edge] = edge_idx
                 edge_counter += 1
 
-        # Ugh I wish we had chained operators...
-        # TODO: Extend to 3D grids
-        i, j, k = np.meshgrid(*map(range, vert_grid_shape), sparse=True)
-
-        # Oh GOD this is awful...
-        exterior_cell_vertex_list = []
-        slicer = (slice(None, None, None),) * 3
-        for dim_idx in range(sgrid.dimensions):
-            exterior_slice = list(slicer)
-            exterior_slice[dim_idx] = 0
-            exterior_slice = tuple(exterior_slice)
-            exterior_cell_vertex_list.append(
-                np.ravel_multi_index(
-                    (i[exterior_slice], j[exterior_slice], k[exterior_slice]),
-                    vert_grid_shape,
-                    mode="wrap",
-                ).flatten()
-            )
-            exterior_slice = list(slicer)
-            exterior_slice[dim_idx] = -1
-            exterior_slice = tuple(exterior_slice)
-            exterior_cell_vertex_list.append(
-                np.ravel_multi_index(
-                    (i[exterior_slice], j[exterior_slice], k[exterior_slice]),
-                    vert_grid_shape,
-                    mode="wrap",
-                ).flatten()
-            )
-
-        exterior_cell_vertices = np.hstack(exterior_cell_vertex_list)
-        exterior_cell_vertices = np.unique(exterior_cell_vertices)
-        print(exterior_cell_vertices)
-
-        for facet_id, (cell_a, cell_b) in enumerate(dual_edges):
-            if cell_a == SENTINAL and cell_b == SENTINAL:
-                raise ValueError(f"Invalid edge at idx: {facet_id}")
-
-            vertices_a = cell_vertices[cell_a, :] if cell_a != SENTINAL else exterior_cell_vertices
-            vertices_b = cell_vertices[cell_b, :] if cell_b != SENTINAL else exterior_cell_vertices
-            # The vertex order doesn't actually matter!
-            # We only need to find the normal vector (and maybe tangent ones)
-            facet_vertices = np.intersect1d(vertices_a, vertices_b)
-            print(facet_vertices)
+            cell_connection_list[cell_idx, :] = local_connections
 
         print("Vertex shape: ", vert_grid_shape)
         # geometry = GridGeometry(vertex_coordinates=vertex_coordinates, cell_half_spaces=)
@@ -161,8 +170,7 @@ class GridGeometry:
 class GridTopology:
     # For v vertices, e edges, and f faces
     # For ~n vertices per face (d+1 if using simplices)
-    cell_facets: np.ndarray  # Facet-ids
-    facet_vertices: np.ndarray  # Vertex-ids
+    cell_vertices: np.ndarray  # Vertex-ids
     cell_adjacency: np.ndarray  # Face-to-face connections (f,~n)
 
 
