@@ -6,12 +6,13 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "gdtk",
-    "jax[cuda13]>=0.8.0",
+    "jax[cuda12]>=0.8.1",
     "numpy>=2.3.4",
+    "polytopax>=0.0.1",
 ]
 
 [tool.uv.sources]
-gdtk = { path = "../../../GDTk/gdtk.robust-python-modules/src/gdtk-py", editable = true }
+gdtk = { path = "../../../GDTk/gdtk.pythonic-dataclasses/src/gdtk-py", editable = true }
 
 [tool.ruff]
 line-length = 100
@@ -19,4 +20,5 @@ line-length = 100
 [dependency-groups]
 dev = [
     "ipython>=9.7.0",
+    "scipy>=1.16.3",
 ]

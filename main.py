@@ -8,14 +8,42 @@ from typing import TYPE_CHECKING
 import numpy as np
 from gdtk import lmr
 
+from cellshapes import Shapes
+
 if TYPE_CHECKING:
     from typing import Self
 
     from gdtk.geom.sgrid import StructuredGrid
 
-REPO_ROOT = Path("/home/alex/GDTk/gdtk.robust-python-modules")
+REPO_ROOT = Path("/home/alex/GDTk/gdtk.pythonic-dataclasses/")
 MAX_VERTICES = 4
 SENTINAL = -1
+
+
+class IndexDict(dict):
+    _count: int
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set the count correct from init
+        self._count = len(self)
+
+    def __getitem__(self, key):
+        # Use internal counter to avoid problems with del or pop
+        if key in self:
+            return super().__getitem__(key)
+
+        new_index = self._count
+        super().__setitem__(key, new_index)
+        self._count += 1
+        return new_index
+
+    def tolist(self):
+        pairs = sorted(self.items(), key=lambda pair: pair[1])
+        return list(map(lambda pair: pair[0], pairs))
+
+    def __setitem__(self, key, value):
+        raise NotImplementedError("IndexDict entries are immutable")
 
 
 def sliding_window(iterable, n):
@@ -28,7 +56,9 @@ def sliding_window(iterable, n):
         yield tuple(window)
 
 
-def construct_halfspace(spanning_vertices: np.ndarray) -> (np.ndarray, float):
+def construct_halfspace(
+    spanning_vertices: np.ndarray, positive_dir: np.ndarray | None = None
+) -> (np.ndarray, float):
     # Assumes the vertices minimally span the dividing (hyper-)plane
     # Here we assume that each *row* is a vertex / point
     # We care about the *orientation*, so let's make everything
@@ -40,7 +70,11 @@ def construct_halfspace(spanning_vertices: np.ndarray) -> (np.ndarray, float):
     # So, we remove the *last* vertex, and replace it with ones.
     anchor = vertices[-1, :].copy()
     vertices -= anchor
-    vertices[-1, :] = np.ones_like(anchor)
+
+    if positive_dir is None:
+        positive_dir = np.ones_like(anchor)
+
+    vertices[-1, :] = positive_dir
 
     decomp = np.linalg.cholesky(vertices @ vertices.T)
     basis = np.linalg.solve(decomp, vertices)
@@ -71,41 +105,54 @@ class Grid:
 
         match sgrid.dimensions:
             case 2:
+                cell = Shapes.QUADRILATERAL
+
                 num_dims = 2
-                facets_per_cell = 4
-                vertices_per_cell = 4
+                vertices_per_facet = 2
+                num_facets = 2 * num_cells + cell_grid_shape.i + cell_grid_shape.j
 
                 vertex_coordinates = np.stack(
                     (sgrid.vertices.x, sgrid.vertices.y), axis=-1
-                ).reshape((num_verts, num_dims))
+                ).reshape((num_verts, cell.dimension))
 
             case 3:
+                cell = Shapes.HEXAHEDRON
+
                 num_dims = 3
-                facets_per_cell = 6
-                vertices_per_cell = 8
+                vertices_per_facet = 4
+                num_facets = (
+                    3 * num_cells
+                    + cell_grid_shape.i * cell_grid_shape.j
+                    + cell_grid_shape.j * cell_grid_shape.k
+                    + cell_grid_shape.k * cell_grid_shape.i
+                )
 
                 vertex_coordinates = np.stack(
                     (sgrid.vertices.x, sgrid.vertices.y, sgrid.vertices.z), axis=-1
-                ).reshape((num_verts, num_dims))
+                ).reshape((num_verts, cell.dimension))
             case _:
                 raise ValueError("Grid must have 2 or 3 dimensions")
 
-        # SOUTH, [FRONT,] EAST, NORTH, [BACK,], WEST
-        neighbour_offsets = np.array([[-1, 0, 0], [0, +1, 0], [+1, 0, 0], [0, -1, 0]])
         # Anti-clockwise from BOTTOM-LEFT
         vertex_offsets = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]])
+        # SOUTH, [FRONT,] EAST, NORTH, [BACK,], WEST
+        # Same ordering as faces
+        # quadrilateral version
+        # (i, j, k) -> (x, y, z)
+        neighbour_offsets = np.array(
+            [
+                [0, -1, 0],
+                [+1, 0, 0],
+                [0, +1, 0],
+                [-1, 0, 0],
+            ]
+        )
 
-        cell_vertices = np.full((num_cells, vertices_per_cell), fill_value=SENTINAL)
-        cell_adjacency = np.full((num_cells, facets_per_cell), fill_value=SENTINAL)
+        # [TODO]: For unstructured grids, replace with a `ragged` array in axis=1
+        cell_vertices = np.full((num_cells, cell.num_vertices), fill_value=SENTINAL)
+        cell_adjacency = np.full((num_cells, cell.num_facets), fill_value=SENTINAL)
 
-        # We include the dual-edges to the "exterior cell"
-        num_dual_edges = 2 * num_cells + cell_grid_shape.i + cell_grid_shape.j
-        dual_edges = np.full((num_dual_edges, 2), fill_value=SENTINAL)
-        dual_edge_lookup = dict()
-
-        cell_connection_list = np.full((num_cells, facets_per_cell), fill_value=SENTINAL)
-
-        edge_counter = 0
+        # Construct `cell_vertices` and `cell adjacency`
         for cell_idx, (i, j, k) in enumerate(np.ndindex(cell_grid_shape)):
             vertices = vertex_offsets + (i, j, k)
             vertex_idxs = np.ravel_multi_index(vertices.T, vert_grid_shape)
@@ -122,36 +169,35 @@ class Grid:
             neighbour_idxs[~valid] = SENTINAL
             cell_adjacency[cell_idx, :] = neighbour_idxs
 
-            local_connections = []
-            local_vertex_path = sliding_window(cycle([0, 1, 2, 3]), 2)  # Loop first element/s
+        # [TODO]: For unstructured grids, replace with a `ragged` array in axis=1
+        facet_vertices = np.full((num_facets, vertices_per_facet), fill_value=SENTINAL)
+        cell_facets = np.full((num_cells, cell.num_facets), fill_value=SENTINAL)
 
-            for neighbour, facet_span in zip(neighbour_idxs, local_vertex_path):
-                dual_edge = (cell_idx, int(neighbour))
+        # Construct `facet_vertices`
+        facet_id_lookup = IndexDict()
+        for cell_idx in range(num_cells):
+            # Store vertices in ascending order
+            cell_facet_vertices = np.sort(cell_vertices[cell_idx, cell.facet_indices], axis=-1)
+            cell_facet_ids = [facet_id_lookup[tuple(facet)] for facet in cell_facet_vertices]
 
-                # Check if the (flipped) dual-edge already exists first
-                # Yes, I could calculate this. It's a pain, this is easier.
-                edge_idx = dual_edge_lookup.get(dual_edge[::-1], edge_counter)
-                local_connections.append(edge_idx)
+            cell_facets[cell_idx, :] = cell_facet_ids
+            facet_vertices[cell_facet_ids, :] = cell_facet_vertices
 
-                if edge_idx != edge_counter:
-                    # The edge did already exist
-                    # No need to repeat the definitions
-                    continue
+        assert len(facet_id_lookup) == num_facets, "Predicted number of facets is incorrect."
 
-                facet_normal, facet_offset = construct_halfspace(
-                    vertex_coordinates[vertex_idxs[list(facet_span)], :]
-                )
+        # Determine which two (2) cells each facet is connecting?
+        for cell_idx in range(num_cells):
+            # Assume that the order of cell_facets is the same as cell_adjacency
+            # i.e. the face description is the same
+            neighbour_idxs = cell_adjacency[cell_idx, :]
+            is_facet_outwards = neighbour_idxs < cell_idx  # Higher -> lower
+            facet_sign = np.where(is_facet_outwards, +1, -1)
+            cell_facets[cell_idx, :] *= facet_sign
+            print(cell_facets[cell_idx, :])
 
-                print(facet_normal, facet_offset)
+        for facet_id in range(num_facets):
+            vertex_coordinates[facet_vertices[facet_id, :], :]
 
-                # Otherwise, define our edge
-                dual_edges[edge_idx] = dual_edge
-                dual_edge_lookup[dual_edge] = edge_idx
-                edge_counter += 1
-
-            cell_connection_list[cell_idx, :] = local_connections
-
-        print("Vertex shape: ", vert_grid_shape)
         # geometry = GridGeometry(vertex_coordinates=vertex_coordinates, cell_half_spaces=)
         # topology = GridTopology(cell_vertices=cell_vertices, cell_adjacency=cell_adjacency)
 
@@ -160,18 +206,55 @@ class Grid:
 
 @dataclass
 class GridGeometry:
+    """Stores the geometric / positional data as cartesian coordinates."""
+
     # For v vertices, e edges, f faces, and c cells
     # For ~n facets per face (d+1 if using simplices)
-    vertex_coordinates: np.ndarray  # Coordinates (v,d)
+
+    # Must be known / constructed from StructuredGrid
+    vertices: np.ndarray  # Coordinates (v,d)
+
+    # Constructed from geom.vertices & topo.cell_vertices
+    # Is it worth storing these? Yes for now, let's see how much we used them.
+    cell_centers: np.ndarray  # Coordinates (c,d)
+
+    # Constructed from geom.vertices & topo.facet_vertices & topo.cell_vertices & topo.cell_adjacency?
     facet_hyperplanes: np.ndarray  # Normal vector & offset -> (f,d+1)
 
 
 @dataclass
 class GridTopology:
+    """Stores the topological / relational data as indices to relevant geometry data."""
+
+    # [NOTE]: Topology is very *ragged* currently
+
     # For v vertices, e edges, and f faces
     # For ~n vertices per face (d+1 if using simplices)
-    cell_vertices: np.ndarray  # Vertex-ids
-    cell_adjacency: np.ndarray  # Face-to-face connections (f,~n)
+
+    # Must be known / constructed from StructuredGrid
+    cell_vertices: np.ndarray  # Vertex-ids (c,~n?)
+
+    # Should be known / constructed from StructuredGrid?
+    # Otherwise can be computed from cell_vertices (expensive)
+    cell_facets: np.ndarray  # Cell-to-face connections (c,?)
+
+    # Should be known / constructed from StructuredGrid?
+    # Otherwise can be computed from cell_vertices (expensive)
+    cell_adjacency: np.ndarray  # Face-to-face connections (f,~?)
+
+    # [NOTE]: We're getting some redundancy here. The triplet of
+    # (this, cell_adjacency, cell_facets) is redundant, one can
+    # always be determined from the other two.
+    # Hmm, probably not great to use this, since currently we don't have
+    # separate indices for each boundary. That means cell-id 0 (bottom-left
+    # corner) will match to -1 for both WEST & SOUTH.
+    cell_connections: np.ndarray  # Cell-to-cell connections (c*f/2,2)
+
+    # Should be known / constructed from StructuredGrid?
+    # Otherwise can be computed from cell_vertices (expensive)
+    # [NOTE]: Is the dual to cell_adjacency, can be done at the same time
+    # Potentially we can only store d vertices per facet.
+    facet_verties: np.ndarray  # Vertex-ids (f,~n?)
 
 
 def main():
