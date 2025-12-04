@@ -307,26 +307,27 @@ def main():
 
     # Starting vector at center of cell id=0
     cell_id = 0
-    p = mygrid.geometry.cell_centers[cell_id, :]
-    q = np.abs(np.random.rand(2))  # Ensure we go north-east for now
-    q /= np.linalg.norm(q)  # Normalise
+    while cell_id != -1:
+        p = mygrid.geometry.cell_centers[cell_id, :]
+        q = np.abs(np.random.rand(2))  # Ensure we go north-east for now
+        q /= np.linalg.norm(q)  # Normalise
 
-    facet_ids = mygrid.topology.cell_facets[cell_id, :]
-    facet_signs, facet_ids = np.sign(facet_ids), np.abs(facet_ids)
-    # Add new axis to `facet_signs` to ensure broadcast is correct
-    convex_normals = mygrid.geometry.facet_normals[facet_ids, :] * facet_signs[:, None]
-    convex_offsets = mygrid.geometry.facet_offsets[facet_ids] * facet_signs
+        facet_ids = mygrid.topology.cell_facets[cell_id, :]
+        facet_signs, facet_ids = np.sign(facet_ids), np.abs(facet_ids)
+        # Add new axis to `facet_signs` to ensure broadcast is correct
+        convex_normals = mygrid.geometry.facet_normals[facet_ids, :] * facet_signs[:, None]
+        convex_offsets = mygrid.geometry.facet_offsets[facet_ids] * facet_signs
 
-    print(convex_normals)
-
-    # b - A@p
-    t_all = (convex_offsets - convex_normals @ p) / (convex_normals @ q)
-    t_all[t_all <= 0] = np.nan
-    print(t_all)
-    t = np.nanmin(t_all)
-    idx = np.nanargmin(t_all)
-    print(f"t = {t:.3f} at facet {idx}")
-    print(f"p + tq = {p + t * q}")
+        # b - A@p
+        t_all = (convex_offsets - convex_normals @ p) / (convex_normals @ q)
+        t_all[t_all <= 0] = np.nan
+        t = np.nanmin(t_all)
+        idx = np.nanargmin(t_all)
+        print(f"t = {t:.3f} at facet {idx}")
+        print(f"p + tq = {p + t * q}")
+        next_cell_id = mygrid.topology.cell_adjacency[cell_id, idx]
+        print(f"The next cell is {next_cell_id}")
+        cell_id = next_cell_id
 
 
 if __name__ == "__main__":
