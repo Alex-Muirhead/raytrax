@@ -151,12 +151,14 @@ class Grid:
         # [TODO]: For unstructured grids, replace with a `ragged` array in axis=1
         cell_vertices = np.full((num_cells, cell.num_vertices), fill_value=SENTINAL)
         cell_adjacency = np.full((num_cells, cell.num_facets), fill_value=SENTINAL)
+        cell_center = np.empty((num_cells, num_dims))
 
-        # Construct `cell_vertices` and `cell adjacency`
+        # Construct `cell_vertices`, `cell_center`, and `cell adjacency`
         for cell_idx, (i, j, k) in enumerate(np.ndindex(cell_grid_shape)):
             vertices = vertex_offsets + (i, j, k)
             vertex_idxs = np.ravel_multi_index(vertices.T, vert_grid_shape)
             cell_vertices[cell_idx, :] = vertex_idxs
+            cell_center[cell_idx, :] = np.mean(vertex_coordinates[vertex_idxs, :], axis=0)
 
             neighbours = neighbour_offsets + (i, j, k)
             neighbour_idxs = np.ravel_multi_index(neighbours.T, cell_grid_shape, mode="wrap")
@@ -185,7 +187,8 @@ class Grid:
 
         assert len(facet_id_lookup) == num_facets, "Predicted number of facets is incorrect."
 
-        # Determine which two (2) cells each facet is connecting?
+        facet_cells = np.full((num_facets, 2), fill_value=SENTINAL)
+
         for cell_idx in range(num_cells):
             # Assume that the order of cell_facets is the same as cell_adjacency
             # i.e. the face description is the same
@@ -193,15 +196,40 @@ class Grid:
             is_facet_outwards = neighbour_idxs < cell_idx  # Higher -> lower
             facet_sign = np.where(is_facet_outwards, +1, -1)
             cell_facets[cell_idx, :] *= facet_sign
-            print(cell_facets[cell_idx, :])
+            # A bit of redundancy here, but we just sort at the end
+            facet_idxs = cell_facets[cell_idx, :]
+            facet_cells[facet_idxs, 0] = cell_idx
+            facet_cells[facet_idxs, 1] = neighbour_idxs
+
+        # Sort now, to ensure cells go from Higher [0] -> Lower [1]
+        facet_cells = np.fliplr(np.sort(facet_cells, axis=-1))
+
+        facet_normals = np.empty((num_facets, num_dims))
+        facet_offsets = np.empty((num_facets,))
 
         for facet_id in range(num_facets):
-            vertex_coordinates[facet_vertices[facet_id, :], :]
+            facet_coordinates = vertex_coordinates[facet_vertices[facet_id, :], :]
+            origin_cell = facet_cells[facet_id, 0]
+            outwards_direction = np.mean(facet_coordinates, axis=0) - cell_center[origin_cell, :]
+            normal, offset = construct_halfspace(facet_coordinates, outwards_direction)
 
-        # geometry = GridGeometry(vertex_coordinates=vertex_coordinates, cell_half_spaces=)
-        # topology = GridTopology(cell_vertices=cell_vertices, cell_adjacency=cell_adjacency)
+            facet_normals[facet_id, :] = normal
+            facet_offsets[facet_id] = offset
 
-        # return Grid(geometry=geometry, topology=topology)
+        geometry = GridGeometry(
+            vertex_coordinates=vertex_coordinates,
+            facet_normals=facet_normals,
+            facet_offsets=facet_offsets,
+        )
+        topology = GridTopology(
+            cell_vertices=cell_vertices,
+            cell_adjacency=cell_adjacency,
+            cell_facets=cell_facets,
+            facet_cells=facet_cells,
+            facet_verties=facet_vertices,
+        )
+
+        return Grid(geometry=geometry, topology=topology)
 
 
 @dataclass
@@ -212,14 +240,12 @@ class GridGeometry:
     # For ~n facets per face (d+1 if using simplices)
 
     # Must be known / constructed from StructuredGrid
-    vertices: np.ndarray  # Coordinates (v,d)
-
-    # Constructed from geom.vertices & topo.cell_vertices
-    # Is it worth storing these? Yes for now, let's see how much we used them.
-    cell_centers: np.ndarray  # Coordinates (c,d)
+    vertex_coordinates: np.ndarray  # Coordinates (v,d)
 
     # Constructed from geom.vertices & topo.facet_vertices & topo.cell_vertices & topo.cell_adjacency?
-    facet_hyperplanes: np.ndarray  # Normal vector & offset -> (f,d+1)
+    # Maybe pack together info (f,d+1) for cache efficiency later?
+    facet_normals: np.ndarray  # Normal vector -> (f,d)
+    facet_offsets: np.ndarray  # Offset -> (f,)
 
 
 @dataclass
@@ -240,7 +266,7 @@ class GridTopology:
 
     # Should be known / constructed from StructuredGrid?
     # Otherwise can be computed from cell_vertices (expensive)
-    cell_adjacency: np.ndarray  # Face-to-face connections (f,~?)
+    facet_cells: np.ndarray  # Face-to-face connections (f,~?)
 
     # [NOTE]: We're getting some redundancy here. The triplet of
     # (this, cell_adjacency, cell_facets) is redundant, one can
@@ -248,7 +274,7 @@ class GridTopology:
     # Hmm, probably not great to use this, since currently we don't have
     # separate indices for each boundary. That means cell-id 0 (bottom-left
     # corner) will match to -1 for both WEST & SOUTH.
-    cell_connections: np.ndarray  # Cell-to-cell connections (c*f/2,2)
+    cell_adjacency: np.ndarray  # Cell-to-cell connections (c*f/2,2)
 
     # Should be known / constructed from StructuredGrid?
     # Otherwise can be computed from cell_vertices (expensive)
