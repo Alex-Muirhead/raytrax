@@ -1,7 +1,7 @@
 import math
 from collections import deque, namedtuple
 from dataclasses import dataclass
-from itertools import islice, cycle
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -289,7 +289,9 @@ def main():
     snap = sim_data.read_snapshot("0001")
     grid = snap.grids[0]
 
-    Grid.from_structured_grid(grid)
+    mygrid = Grid.from_structured_grid(grid)
+
+    print(mygrid)
 
 
 if __name__ == "__main__":

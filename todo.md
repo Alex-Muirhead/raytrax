@@ -7,7 +7,7 @@
 - [x] Generate cell vertex-ids
 - [x] Generate facet vertex-ids
 - [x] Generate connections between cells and facets
-- [ ] Generate connections between facets and cells
+- [x] Generate connections between facets and cells
 
 ## Step 3. Facet Geometry
-- [ ] Calculate plane definitions (normal & offset) of facets
+- [x] Calculate plane definitions (normal & offset) of facets
