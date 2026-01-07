@@ -1,5 +1,5 @@
-from jax._src.interpreters.partial_eval import convert_constvars_jaxpr
-from typing import overload
+from __future__ import annotations
+
 import math
 from collections import deque, namedtuple
 from dataclasses import dataclass
@@ -307,11 +307,13 @@ def main():
 
     # Starting vector at center of cell id=0
     cell_id = 0
-    while cell_id != -1:
-        p = mygrid.geometry.cell_centers[cell_id, :]
-        q = np.abs(np.random.rand(2))  # Ensure we go north-east for now
-        q /= np.linalg.norm(q)  # Normalise
+    q = np.abs(np.random.rand(2))  # Ensure we go north-east for now
+    q /= np.linalg.norm(q)  # Normalise
 
+    p = mygrid.geometry.cell_centers[cell_id, :]
+    t = 0
+
+    while cell_id != -1:
         facet_ids = mygrid.topology.cell_facets[cell_id, :]
         facet_signs, facet_ids = np.sign(facet_ids), np.abs(facet_ids)
         # Add new axis to `facet_signs` to ensure broadcast is correct
@@ -320,7 +322,7 @@ def main():
 
         # b - A@p
         t_all = (convex_offsets - convex_normals @ p) / (convex_normals @ q)
-        t_all[t_all <= 0] = np.nan
+        t_all[t_all <= t] = np.nan
         t = np.nanmin(t_all)
         idx = np.nanargmin(t_all)
         print(f"t = {t:.3f} at facet {idx}")
