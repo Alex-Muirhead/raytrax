@@ -3,10 +3,14 @@ from __future__ import annotations
 import math
 from collections import deque, namedtuple
 from dataclasses import dataclass
+from functools import partial
 from itertools import islice
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
+import jax
+import jax.numpy as jnp
+import lox
 import numpy as np
 from gdtk import lmr
 
@@ -297,6 +301,11 @@ class GridTopology:
     facet_verties: np.ndarray  # Vertex-ids (f,~n?)
 
 
+class RayState(NamedTuple):
+    current_cell_id: int
+    distance: float
+
+
 def main():
     lmr_cfg = lmr.LmrConfig(REPO_ROOT / "src/lmr/lmr.cfg")
     sim_data = lmr.SimInfo(lmr_cfg)
@@ -311,25 +320,34 @@ def main():
     q /= np.linalg.norm(q)  # Normalise
 
     p = mygrid.geometry.cell_centers[cell_id, :]
-    t = 0
 
-    while cell_id != -1:
-        facet_ids = mygrid.topology.cell_facets[cell_id, :]
-        facet_signs, facet_ids = np.sign(facet_ids), np.abs(facet_ids)
+    def cond_fun(state: RayState) -> bool:
+        return state.current_cell_id != -1
+
+    def body_fun(state: RayState) -> RayState:
+        this_cell = state.current_cell_id
+        facet_ids = jnp.asarray(mygrid.topology.cell_facets)[this_cell, :]
+        facet_signs, facet_ids = jnp.sign(facet_ids), jnp.abs(facet_ids)
         # Add new axis to `facet_signs` to ensure broadcast is correct
-        convex_normals = mygrid.geometry.facet_normals[facet_ids, :] * facet_signs[:, None]
-        convex_offsets = mygrid.geometry.facet_offsets[facet_ids] * facet_signs
+        convex_normals = (
+            jnp.asarray(mygrid.geometry.facet_normals)[facet_ids, :] * facet_signs[:, None]
+        )
+        convex_offsets = jnp.asarray(mygrid.geometry.facet_offsets)[facet_ids] * facet_signs
 
         # b - A@p
         t_all = (convex_offsets - convex_normals @ p) / (convex_normals @ q)
-        t_all[t_all <= t] = np.nan
-        t = np.nanmin(t_all)
-        idx = np.nanargmin(t_all)
-        print(f"t = {t:.3f} at facet {idx}")
-        print(f"p + tq = {p + t * q}")
-        next_cell_id = mygrid.topology.cell_adjacency[cell_id, idx]
-        print(f"The next cell is {next_cell_id}")
-        cell_id = next_cell_id
+        t_all = jnp.where(t_all <= state.distance, np.nan, t_all)
+        distance = jnp.nanmin(t_all)
+        idx = jnp.nanargmin(t_all)
+        next_cell = jnp.asarray(mygrid.topology.cell_adjacency)[this_cell, idx]
+        lox.log({"distance": distance, "move to cell": next_cell})
+        return RayState(current_cell_id=next_cell, distance=distance)
+
+    initial_state = RayState(current_cell_id=cell_id, distance=0)
+    runner = partial(jax.lax.while_loop, cond_fun, body_fun, initial_state)
+    final_state = lox.tap(runner, callback=print)()
+
+    print(final_state)
 
 
 if __name__ == "__main__":

@@ -8,12 +8,15 @@ dependencies = [
     "equinox>=0.13.2",
     "gdtk",
     "jax[cuda12]>=0.8.1",
+    "jaxtyping>=0.3.3",
+    "lox",
     "numpy>=2.3.4",
     "polytopax>=0.0.1",
 ]
 
 [tool.uv.sources]
 gdtk = { path = "../../../GDTk/gdtk.pythonic-dataclasses/src/gdtk-py", editable = true }
+lox = { git = "https://github.com/huterguier/lox" }
 
 [tool.ruff]
 line-length = 100
