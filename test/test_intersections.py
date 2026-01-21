@@ -1,4 +1,7 @@
+import jax
+import jax.numpy as jnp
 import numpy as np
+from equinox._misc import currently_jitting
 from pytest import approx, mark, param
 
 from intersections import ConvexCell, LinearRay, crossing
@@ -12,7 +15,7 @@ def unit_vec(a: list[float] | np.NDArray):
 def unit_2D_cell(x: int = 0, y: int = 0) -> ConvexCell:
     """Generate a unit-square cell.
 
-    Square axis-alignend cell with unit side lengths.
+    Square axis-aligned cell with unit side lengths.
     Can be offset.
         1
       +---+
@@ -25,14 +28,15 @@ def unit_2D_cell(x: int = 0, y: int = 0) -> ConvexCell:
         y (int): The lower-left y-coordinate
     """
     # fmt: off
-    normal = np.array(
+    backend = jnp if currently_jitting() else np 
+    normal = backend.array(
         [[+1.0,  0.0],
          [ 0.0, +1.0],
          [-1.0,  0.0],
          [ 0.0, -1.0]],
         dtype=float
     )
-    offset = np.array(
+    offset = backend.array(
         [x + 1, y + 1, x, y],
         dtype=float
     )
@@ -40,10 +44,11 @@ def unit_2D_cell(x: int = 0, y: int = 0) -> ConvexCell:
     return ConvexCell(normal=normal, offset=offset)
 
 
-def unit_3D_cell() -> ConvexCell:
+def unit_3D_cell(x: int = 0, y: int = 0, z: int = 0) -> ConvexCell:
     """Generate a unit-cube cell."""
     # fmt: off
-    normal = np.array(
+    backend = jnp if currently_jitting() else np 
+    normal = backend.array(
         [[+1.0,  0.0,  0.0],
          [ 0.0, +1.0,  0.0],
          [ 0.0,  0.0, +1.0],
@@ -52,12 +57,26 @@ def unit_3D_cell() -> ConvexCell:
          [ 0.0,  0.0, -1.0]],
         dtype=float
     )
-    offset = np.array(
-        [1.0, 1.0, 1.0, 0.0, 0.0, 0.0],
+    offset = backend.array(
+        [x + 1, y + 1, z + 1, x, y, z],
         dtype=float
     )
     # fmt: on
     return ConvexCell(normal=normal, offset=offset)
+
+
+def unit_2D_grid(nx: int, ny: int) -> ConvexCell:
+    """Generate a grid of unit-square cells."""
+    coords = np.meshgrid(range(nx), range(ny), indexing="ij")
+    coords = map(np.ravel, coords)
+    return jax.vmap(unit_2D_cell)(*coords)
+
+
+def unit_3D_grid(nx: int, ny: int, nz: int) -> ConvexCell:
+    """Generate a grid of unit-square cells."""
+    coords = np.meshgrid(range(nx), range(ny), range(nz), indexing="ij")
+    coords = map(np.ravel, coords)
+    return jax.vmap(unit_3D_cell)(*coords)
 
 
 def random_2D_quad() -> ConvexCell:
