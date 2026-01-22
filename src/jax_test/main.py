@@ -12,7 +12,8 @@ import lox
 import numpy as np
 from gdtk import lmr
 
-from cellshapes import Shapes
+from jax_test.cellshapes import Shapes
+from jax_test.intersections import ConvexCell, LinearRay, crossing
 
 if TYPE_CHECKING:
     from typing import Self
@@ -204,13 +205,13 @@ class Grid:
             # Assume that the order of cell_facets is the same as cell_adjacency
             # i.e. the face description is the same
             neighbour_idxs = cell_adjacency[cell_idx, :]
-            is_facet_outwards = neighbour_idxs < cell_idx  # Higher -> lower
-            facet_sign = np.where(is_facet_outwards, +1, -1)
-            cell_facets[cell_idx, :] *= facet_sign
-            # A bit of redundancy here, but we just sort at the end
             facet_idxs = cell_facets[cell_idx, :]
             facet_cells[facet_idxs, 0] = cell_idx
             facet_cells[facet_idxs, 1] = neighbour_idxs
+            # A bit of redundancy here, but we just sort at the end
+            is_facet_outwards = neighbour_idxs < cell_idx  # Higher -> lower
+            facet_sign = np.where(is_facet_outwards, +1, -1)
+            cell_facets[cell_idx, :] *= facet_sign
 
         # Sort now, to ensure cells go from Higher [0] -> Lower [1]
         facet_cells = np.fliplr(np.sort(facet_cells, axis=-1))
@@ -311,6 +312,41 @@ def main():
     grid = snap.grids[0]
 
     mygrid = Grid.from_structured_grid(grid)
+    num_cells = (grid.niv - 1) * (grid.njv - 1)  # Okay we'll be using this a lot I guess?
+
+    seed = 4  # Chosen by random dice roll
+    key = jax.random.key(seed)
+
+    # Ah yes, very distributed selection
+    key, subkey = jax.random.split(key)
+    num_stuff = 10
+    cell_ids = jax.random.randint(subkey, num_stuff, minval=0, maxval=num_cells)
+    facet_ids = mygrid.topology.cell_facets[cell_ids, :]
+    facet_signs, facet_ids = jnp.sign(facet_ids), jnp.abs(facet_ids)
+
+    # Not the best, not the worst
+    cells = ConvexCell(
+        normal=mygrid.geometry.facet_normals[facet_ids] * facet_signs[..., None],
+        offset=mygrid.geometry.facet_offsets[facet_ids] * facet_signs,
+    )
+
+    key, subkey = jax.random.split(key)
+    directions = jax.random.normal(key, (num_stuff, 2))  # 2 dimensions
+    directions /= jnp.linalg.vector_norm(directions, axis=-1, keepdims=True)
+    rays = LinearRay(
+        terminus=mygrid.geometry.cell_centers[cell_ids],
+        tangent=directions,
+        travel=jnp.zeros(num_stuff),
+    )
+
+    print(cells)
+    print(rays)
+
+    crossings, travels = crossing(cells, rays)
+    print(crossings)
+    print(travels)
+
+    raise NotImplementedError
 
     # Starting vector at center of cell id=0
     cell_id = 0
