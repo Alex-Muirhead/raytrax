@@ -1,4 +1,5 @@
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float, Int
@@ -43,8 +44,6 @@ def crossing(
     # Take minimum value greater than current travel
     absolute_travel = jnp.where(alignment > epsilon, absolute_travel, jnp.nan)
     crossing_index = jnp.nanargmin(absolute_travel, axis=-1)
-    crossing_travel = jnp.nanmin(absolute_travel, axis=-1) - ray.travel
+    # We can use jnp.nanmin, but in case we need to modify the index, we can do this!
+    crossing_travel = jax.vmap(jnp.take)(absolute_travel, crossing_index) - ray.travel
     return crossing_index, crossing_travel
-    # crossing_index = jnp.nanargmin(absolute_travel, axis=-1, keepdims=True)
-    # crossing_travel = jnp.take_along_axis(absolute_travel, crossing_index, axis=-1)
-    # return jnp.squeeze(crossing_index, axis=-1), jnp.squeeze(crossing_travel, axis=-1)
