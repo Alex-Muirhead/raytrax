@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -44,6 +46,12 @@ class LinearRay(eqx.Module):
     @property
     def p(self) -> Float[Array, "... ndim"]:
         return self.terminus + self.travel[..., None] * self.tangent
+
+
+class HyperbolicRay(eqx.Module):
+    @classmethod
+    def from_linear(cls, ray: LinearRay) -> HyperbolicRay:
+        eccentricity = jnp.sqrt()
 
 
 @eqx.filter_jit

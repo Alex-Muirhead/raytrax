@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import copy
 import math
 from collections import deque, namedtuple
@@ -369,7 +371,7 @@ def main():
 
         cells = mygrid.get_cells(cell_ids)
         crossings, travels = crossing(cells, rays)
-        cummulative.at[cell_ids].add(jnp.where(active, travels, 0.0))
+        cummulative = cummulative.at[cell_ids].add(jnp.where(active, travels, 0.0))
         rays = copy.replace(rays, travel=rays.travel + jnp.where(active, travels, 0.0))
 
         new_cell_ids = mygrid.topology.cell_adjacency[cell_ids, crossings]

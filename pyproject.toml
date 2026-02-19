@@ -3,15 +3,16 @@ name = "jax_test"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "equinox>=0.13.2",
     "gdtk",
     "jax[cuda12]>=0.8.1",
     "jaxtyping>=0.3.3",
     "lox",
+    "meshio>=5.3.5",
     "numpy>=2.3.4",
-    "polytopax>=0.0.1",
+    "pyvista>=0.46.4",
 ]
 
 [project.scripts]
@@ -20,6 +21,7 @@ main = "jax_test.main:main"
 [dependency-groups]
 dev = [
     "ipython>=9.7.0",
+    "patdb",
     "pytest>=9.0.2",
     "scipy>=1.16.3",
 ]
@@ -32,6 +34,7 @@ build-backend = "uv_build"
 gdtk = { path = "../../../GDTk/gdtk.pythonic-dataclasses/src/gdtk-py", editable = true }
 # gdtk = { git = "https://github.com/gdtk-uq/gdtk/", branch="gdtk-py/pythonic-dataclasses", subdirectory="src/gdtk-py" }
 lox = { git = "https://github.com/huterguier/lox" }
+patdb = { path = "../../../Software/patdb" }
 
 [tool.ruff]
 line-length = 100
