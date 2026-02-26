@@ -15,8 +15,8 @@ import numpy as np
 from gdtk import lmr
 from jaxtyping import Array, Bool, Float, Int
 
-from jax_test.cellshapes import Shapes
-from jax_test.intersections import ConvexCell, LinearRay, crossing
+from raytrax.cellshapes import Shapes
+from raytrax.intersections import ConvexCell, LinearRay, crossing
 
 jax.config.update("jax_enable_x64", True)
 
