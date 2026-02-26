@@ -1,7 +1,7 @@
 [project]
-name = "jax_test"
+name = "raytrax"
 version = "0.1.0"
-description = "Add your description here"
+description = "Radiation Transport (X)ccelerator"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -31,10 +31,10 @@ requires = ["uv_build>=0.9.26,<0.10.0"]
 build-backend = "uv_build"
 
 [tool.uv.sources]
-gdtk = { path = "../../../GDTk/gdtk.pythonic-dataclasses/src/gdtk-py", editable = true }
+gdtk = { path = "../../GDTk/gdtk.pythonic-dataclasses/src/gdtk-py", editable = true }
 # gdtk = { git = "https://github.com/gdtk-uq/gdtk/", branch="gdtk-py/pythonic-dataclasses", subdirectory="src/gdtk-py" }
 lox = { git = "https://github.com/huterguier/lox" }
-patdb = { path = "../../../Software/patdb" }
+patdb = { path = "../../Software/patdb" }
 
 [tool.ruff]
 line-length = 100

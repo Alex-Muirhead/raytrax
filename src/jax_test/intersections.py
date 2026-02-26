@@ -49,9 +49,43 @@ class LinearRay(eqx.Module):
 
 
 class HyperbolicRay(eqx.Module):
+    semi_major: Float[Array, "..."]
+    semi_minor: Float[Array, "..."]
+    linear_ecc: Float[Array, "..."]
+    origin: Float[Array, "..."]
+
+    # Only allows axis-aligned cylindrical symmetry. Reasonable enough
     @classmethod
-    def from_linear(cls, ray: LinearRay) -> HyperbolicRay:
-        eccentricity = jnp.sqrt()
+    def from_linear(cls, ray: LinearRay, axis: int = 0) -> HyperbolicRay:
+        """Construct a HyperbolicRay from a LinearRay.
+
+        Params
+        ------
+        ray: `LinearRay`
+            An existing ray in Cartesian space.
+        axis: `int` = 0
+            The axis to perform rotation around. Currently limited to one
+            of 0 (x), 1 (y), and 2 (z)
+        """
+        # Since we are axis-aligned, just use [..., axis] to "project" down
+        normal = ray.tangent.at[..., axis].set(0)
+        true_ecc = 1 / jnp.linalg.vector_norm(normal, axis=-1)
+
+        semi_major = jnp.abs(jnp.cross(ray.terminus, ray.tangent)[..., axis]) * true_ecc
+        semi_minor = ray.tangent[..., axis] * semi_major * true_ecc
+        linear_ecc = semi_major * true_ecc
+
+        travel_offset = jnp.dot(ray.terminus, normal) * true_ecc**2
+        origin = ray.terminus - travel_offset * ray.tangent
+        # asymp_pos = jnp.stack([+semi_minor, semi_major], axis=-1)
+        # asymp_neg = jnp.stack([-semi_minor, semi_major], axis=-1)
+
+        return HyperbolicRay(
+            semi_major=semi_major,
+            semi_minor=semi_minor,
+            linear_ecc=linear_ecc,
+            origin=origin,
+        )
 
 
 @eqx.filter_jit
