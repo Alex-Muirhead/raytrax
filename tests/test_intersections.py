@@ -4,7 +4,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pytest import approx, mark, param
 
-from jax_test.intersections import ConvexCell, LinearRay, crossing
+from raytrax.intersections import ConvexCell, LinearRay, crossing
 
 
 def unit_vec(a: list[float] | NDArray):
