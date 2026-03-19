@@ -155,17 +155,33 @@ def _(cell_face_vertices):
     return cell_face_hashes, cell_face_parity
 
 
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    I want to keep all my `sorted_` variations of variables within here, maybe?
+    That way, I don't have to worry about whether the `unique` operation messed around with the ordering, and whether us doing the `lexsort` as a separate step maybe lost ordering somewhere.
+
+    **Rationale**:
+    - The construction of `cell_face_ids` uses `sorted_face_ids` and `face_hashes_order`.
+    - The values (and specific order) of `sorted_face_ids` comes from `np.unique` on `sorted_face_hashes`, so we know that the ordering of `sorted_face_ids` will correctly reconstruct the array `sorted_face_hashes`. Given the duplicates within `sorted_face_hashes`, and the (potential) instability of `np.unique`, we may **lose** the ordering of faces within duplicates.
+    - The values and order of `sorted_face_ids` are **only** used to store the ID of faces using `face_hashes_order`, which itself is **only** used to constructed `sorted_face_hashes`.
+    - _Therefore_: All values surrounding `np.lexsort` _and_ `np.unique` are self-contained.
+
+    **Outputs**:
+    The outputs from this cell are
+    1. `unique_face_hashes` (used to store the vertices that define a face) and
+    2. `face_lexkey_counts`, which is only used for an assertion / sanity check currently.
+    """)
+    return
+
+
 @app.cell
 def _(cell_face_hashes):
     face_hashes_order = np.lexsort(cell_face_hashes[..., ::-1].T)
 
     # Sort all our data (so we can keep track of it)
     sorted_face_hashes = cell_face_hashes[face_hashes_order, :]
-    return face_hashes_order, sorted_face_hashes
 
-
-@app.cell
-def _(sorted_face_hashes):
     # Assumption -> Faces (or their hashes) appear AT MOST twice.
     unique_face_hashes, sorted_face_ids, face_lexkey_counts = np.unique(
         sorted_face_hashes,
@@ -175,14 +191,10 @@ def _(sorted_face_hashes):
         axis=0
     )
     assert np.max(face_lexkey_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
-    return face_lexkey_counts, sorted_face_ids
 
-
-@app.cell
-def _(face_hashes_order, sorted_face_ids):
     cell_face_ids = np.empty_like(sorted_face_ids)
     cell_face_ids[face_hashes_order] = sorted_face_ids
-    return (cell_face_ids,)
+    return cell_face_ids, face_lexkey_counts
 
 
 @app.cell
