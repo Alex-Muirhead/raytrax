@@ -39,5 +39,5 @@ lox = { git = "https://github.com/huterguier/lox" }
 patdb = { path = "../../Software/patdb" }
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 ignore = ["F722"]

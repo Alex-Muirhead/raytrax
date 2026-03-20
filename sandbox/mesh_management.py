@@ -15,9 +15,7 @@ with app.setup:
 def _():
     mesh = meshio.read("cylinder.msh")
     cell_block = mesh.cells[0]
-
-    cell_vertices = np.asarray(cell_block.data)
-    return (cell_block,)
+    return cell_block, mesh
 
 
 @app.cell(hide_code=True)
@@ -37,7 +35,6 @@ def _():
             (2, 3),  # top:    2 -> 3
             (3, 0),  # left:   3 -> 0
         ],
-
         # 3D elements: faces wound counterclockwise when viewed from outside.
         #
         # Tetrahedron:
@@ -49,7 +46,6 @@ def _():
             (1, 2, 3),  # right face, normal pointing away from vertex 0
             (0, 3, 2),  # left face, normal pointing away from vertex 1
         ],
-
         # Hexahedron:
         #   Bottom = 0,1,2,3 (CCW from below), Top = 4,5,6,7 (CCW from above).
         #   Vertex i on bottom connects to vertex i+4 on top.
@@ -61,59 +57,61 @@ def _():
             (2, 3, 7, 6),  # back face, normal pointing out
             (3, 0, 4, 7),  # left face, normal pointing out
         ],
-
         # Wedge (triangular prism):
         #   Bottom triangle = 0,1,2, Top triangle = 3,4,5.
         #   Vertex i on bottom connects to vertex i+3 on top.
         "wedge": [
-            (0, 2, 1),     # bottom triangle, normal pointing down
-            (3, 4, 5),     # top triangle, normal pointing up
+            (0, 2, 1),  # bottom triangle, normal pointing down
+            (3, 4, 5),  # top triangle, normal pointing up
             (0, 1, 4, 3),  # front quad
             (1, 2, 5, 4),  # right quad
             (2, 0, 3, 5),  # left quad
         ],
-
         # Pyramid:
         #   Base = 0,1,2,3 (quad), apex = 4 (above).
         "pyramid": [
             (0, 3, 2, 1),  # base quad, normal pointing down (away from apex)
-            (0, 1, 4),     # front triangle
-            (1, 2, 4),     # right triangle
-            (2, 3, 4),     # back triangle
-            (3, 0, 4),     # left triangle
+            (0, 1, 4),  # front triangle
+            (1, 2, 4),  # right triangle
+            (2, 3, 4),  # back triangle
+            (3, 0, 4),  # left triangle
         ],
     }
     return (FACE_DEFINITIONS,)
 
 
 @app.function
-def sort3_with_parity_bit(arr):
+def sort3_with_parity_bit(arr, axis: int = 0):
     """Sorting for 3 elements, returns (sorted, parity)."""
-    a, b, c = arr[0], arr[1], arr[2]
+    a, b, c = np.unstack(arr, axis=axis)
     swaps = 0
 
     def cmp_swap(x, y, s):
         need_swap = x > y
-        lo = jnp.where(need_swap, y, x)
-        hi = jnp.where(need_swap, x, y)
-        return lo, hi, s + jnp.where(need_swap, 1, 0)
+        lo = np.where(need_swap, y, x)
+        hi = np.where(need_swap, x, y)
+        return lo, hi, s + np.where(need_swap, 1, 0)
 
     a, b, swaps = cmp_swap(a, b, swaps)
     b, c, swaps = cmp_swap(b, c, swaps)
     a, b, swaps = cmp_swap(a, b, swaps)
 
-    sorted_arr = jnp.stack([a, b, c])
+    sorted_arr = np.stack([a, b, c], axis=axis)
     parity = swaps % 2
     return sorted_arr, parity
 
 
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""
-    This is where things get tricky to keep track of.
-    I've flattened everything, but all of these are "grouped" by the cell.
-    """)
-    return
+@app.function
+def plane_normal_and_offset(arr, axis: int = -2, np = np):
+    """Defining a plane from 3 points, returns (normal, offset)."""
+    ref, u, v = np.unstack(arr, axis=axis)
+    # Relative vectors
+    u -= ref
+    v -= ref
+    normal = np.cross(u, v)
+    normal /= np.linalg.vector_norm(normal)  # Ensure unit vec
+    offset = np.vecdot(normal, ref)
+    return normal, offset
 
 
 @app.cell
@@ -129,94 +127,82 @@ def _(
     FACE_DEFINITIONS: dict[str, list[tuple[int, ...]]],
     cell_block,
     num_cells,
-    num_faces_per_cell,
-    num_verts_per_face,
 ):
     # As we perform operations on the face lists, we want to keep track of where they came from.
-    # We create an array of shape (num_cells, num_faces) that enumerates the cells & (local) faces. 
-    cell_ids, local_face_ids = np.meshgrid(np.arange(num_cells), range(num_faces_per_cell), indexing="ij")
+    # We create an array of shape (num_cells, num_faces) that enumerates the cells & (local) faces.
+    cell_ids = np.expand_dims(range(num_cells), axis=1)
 
     # For each cell (defined by vertex IDs), use the FACE_DEFINITIONS lookup to create a list of all faces.
-    # Initially, we have shape (num_cells, num_faces, num_vertices). 
+    # Initially, we have shape (num_cells, num_faces, num_vertices).
     cell_face_vertices = np.asarray(cell_block.data[:, FACE_DEFINITIONS[cell_block.type]], dtype=jnp.int32)
-
-    # Now we flatten everything, for ease of use!
-    cell_ids = np.reshape(cell_ids, (-1))
-    local_face_ids = np.reshape(local_face_ids, (-1))
-    # We flatten this down into (num_cells * num_faces, num_vertices), where we know num_vertices == 3.
-    cell_face_vertices = np.reshape(cell_face_vertices, (-1, num_verts_per_face))
     return cell_face_vertices, cell_ids
 
 
 @app.cell
 def _(cell_face_vertices):
     # Sorting the vertices of each face by their ID gives the "hash" of each face.
-    cell_face_hashes, cell_face_parity = jax.vmap(sort3_with_parity_bit)(cell_face_vertices)
+    cell_face_hashes, cell_face_parity = sort3_with_parity_bit(cell_face_vertices, axis=2)
     return cell_face_hashes, cell_face_parity
-
-
-@app.cell(hide_code=True)
-def _():
-    mo.md(r"""
-    I want to keep all my `sorted_` variations of variables within here, maybe?
-    That way, I don't have to worry about whether the `unique` operation messed around with the ordering, and whether us doing the `lexsort` as a separate step maybe lost ordering somewhere.
-
-    **Rationale**:
-    - The construction of `cell_face_ids` uses `sorted_face_ids` and `face_hashes_order`.
-    - The values (and specific order) of `sorted_face_ids` comes from `np.unique` on `sorted_face_hashes`, so we know that the ordering of `sorted_face_ids` will correctly reconstruct the array `sorted_face_hashes`. Given the duplicates within `sorted_face_hashes`, and the (potential) instability of `np.unique`, we may **lose** the ordering of faces within duplicates.
-    - The values and order of `sorted_face_ids` are **only** used to store the ID of faces using `face_hashes_order`, which itself is **only** used to constructed `sorted_face_hashes`.
-    - _Therefore_: All values surrounding `np.lexsort` _and_ `np.unique` are self-contained.
-
-    **Outputs**:
-    The outputs from this cell are
-    1. `unique_face_hashes` (used to store the vertices that define a face) and
-    2. `face_lexkey_counts`, which is only used for an assertion / sanity check currently.
-    """)
-    return
 
 
 @app.cell
 def _(cell_face_hashes):
-    face_hashes_order = np.lexsort(cell_face_hashes[..., ::-1].T)
-
-    # Sort all our data (so we can keep track of it)
-    sorted_face_hashes = cell_face_hashes[face_hashes_order, :]
-
     # Assumption -> Faces (or their hashes) appear AT MOST twice.
-    unique_face_hashes, sorted_face_ids, face_lexkey_counts = np.unique(
-        sorted_face_hashes,
-        return_inverse=True, 
-        return_counts=True, 
-        sorted=True, 
-        axis=0
-    )
+    _, face_lexkey_counts = np.unique(cell_face_hashes, return_counts=True, axis=0)
     assert np.max(face_lexkey_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
+    return (face_lexkey_counts,)
+
+
+@app.cell
+def _(cell_face_hashes, num_faces_per_cell, num_verts_per_face):
+    # We flatten this down into (num_cells * num_faces, num_vertices), where we know num_vertices == 3.
+    face_keys = np.reshape(cell_face_hashes, (-1, num_verts_per_face))
+    # Lexsort will sort by colums 2 -> 1 -> 0, as default.
+    # We reverse our columns to sort 0 -> 1 -> 2.
+    # This matches how we've ordered the vertices within each face.
+    # i.e. if a < b < c then
+    #      (a, b, c).
+    #      (a, c, b),
+    #      (b, a, c),
+    #      (b, c, a),
+    #      (c, a, b),
+    #      (c, b, a),
+    face_ordering = np.lexsort(np.unstack(face_keys, axis=1)[::-1])
+    sorted_face_hashes = face_keys[face_ordering, :]
+
+    # Under the assumption faces appear only one (1) or two (2) times, we can use a neighbour comparison
+    # If a row (i) is different from its predecessor (i-1), then it is unique (and first)!
+    is_unique = np.any(sorted_face_hashes != np.roll(sorted_face_hashes, +1, axis=0), axis=-1)
+    unique_face_hashes = sorted_face_hashes[is_unique]
+    sorted_face_ids = np.cumulative_sum(is_unique) - 1  # Otherwise we count from 1, instead of 0
+    num_faces, _ = unique_face_hashes.shape
 
     cell_face_ids = np.empty_like(sorted_face_ids)
-    cell_face_ids[face_hashes_order] = sorted_face_ids
-    return cell_face_ids, face_lexkey_counts
+    cell_face_ids[face_ordering] = sorted_face_ids
+    cell_face_ids = cell_face_ids.reshape((-1, num_faces_per_cell))
+    return cell_face_ids, num_faces, unique_face_hashes
 
 
 @app.cell
 def _(cell_face_parity, face_lexkey_counts):
-    num_faces = len(face_lexkey_counts)
-
-    # I don't *think* it's a given that these will always be equal... 
+    # I don't *think* it's a given that these will always be equal...
     # An _internal_ face must be always be counted for each.
     # But _external_ faces will only count towards either -1 or +1, not both.
+    # NOTE: These are only equal because standard face definition of tetrahedra have an equal
+    #       number of odd & even parity faces. Combining only tetrahedra will leave this equal.
     print("Number of faces that are referenced with parity")
     print(f"\t even: {np.count_nonzero(cell_face_parity == 0):10,}")
     print(f"\t  odd: {np.count_nonzero(cell_face_parity == 1):10,}")
     # Regardless, the number times a face is stored as -1/+1 on cells doesn't equal the number of faces.
-    print(f"Total number of faces: {num_faces:10,}")
     # Let's check external vs internal
     print(f"Number of external faces (referenced by cells once):  {np.count_nonzero(face_lexkey_counts == 1):10,}")
     print(f"Number of internal faces (referenced by cells twice): {np.count_nonzero(face_lexkey_counts == 2):10,}")
-    return (num_faces,)
+    return
 
 
 @app.cell
 def _(cell_face_ids, cell_face_parity, cell_ids, num_faces):
+    # num_faces = len(face_lexkey_counts)
     # We know there can be a maximum of 2 cells per face
     # Let's define the cell with parity=-1 as column 0, and parity=+1 as column 1
     face_cell_ids = np.full((num_faces, 2), fill_value=-1, dtype=int)
@@ -227,13 +213,14 @@ def _(cell_face_ids, cell_face_parity, cell_ids, num_faces):
 @app.cell
 def _(cell_face_ids, cell_face_parity, cell_ids, face_cell_ids):
     assert np.all(face_cell_ids[cell_face_ids, cell_face_parity] == cell_ids), "Indexing is messed up"
-    cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_parity]
-    return (cell_to_cell,)
+    # 1 - parity => Look on the other side of the face
+    cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_parity]  
+    return
 
 
 @app.cell
-def _(cell_to_cell, num_faces_per_cell):
-    cell_to_cell.reshape((-1, num_faces_per_cell))
+def _(mesh, unique_face_hashes):
+    face_normal, face_offset = plane_normal_and_offset(mesh.points[unique_face_hashes])
     return
 
 
