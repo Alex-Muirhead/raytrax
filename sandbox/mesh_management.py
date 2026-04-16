@@ -10,6 +10,8 @@ with app.setup:
     import meshio
     import numpy as np
 
+    from raytrax.grid import process_cell_block
+
 
 @app.cell
 def _():
@@ -102,7 +104,7 @@ def sort3_with_parity_bit(arr, axis: int = 0):
 
 
 @app.function
-def plane_normal_and_offset(arr, axis: int = -2, np = np):
+def plane_normal_and_offset(arr, axis: int = -2, np=np):
     """Defining a plane from 3 points, returns (normal, offset)."""
     ref, u, v = np.unstack(arr, axis=axis)
     # Relative vectors
@@ -134,14 +136,18 @@ def _(
 
     # For each cell (defined by vertex IDs), use the FACE_DEFINITIONS lookup to create a list of all faces.
     # Initially, we have shape (num_cells, num_faces, num_vertices).
-    cell_face_vertices = np.asarray(cell_block.data[:, FACE_DEFINITIONS[cell_block.type]], dtype=jnp.int32)
+    cell_face_vertices = np.asarray(
+        cell_block.data[:, FACE_DEFINITIONS[cell_block.type]], dtype=jnp.int32
+    )
     return cell_face_vertices, cell_ids
 
 
 @app.cell
 def _(cell_face_vertices):
     # Sorting the vertices of each face by their ID gives the "hash" of each face.
-    cell_face_hashes, cell_face_parity = sort3_with_parity_bit(cell_face_vertices, axis=2)
+    cell_face_hashes, cell_face_parity = sort3_with_parity_bit(
+        cell_face_vertices, axis=2
+    )
     return cell_face_hashes, cell_face_parity
 
 
@@ -149,7 +155,9 @@ def _(cell_face_vertices):
 def _(cell_face_hashes):
     # Assumption -> Faces (or their hashes) appear AT MOST twice.
     _, face_lexkey_counts = np.unique(cell_face_hashes, return_counts=True, axis=0)
-    assert np.max(face_lexkey_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
+    assert np.max(face_lexkey_counts) <= 2, (
+        "Invalid mesh: Faces appear connected to more than 2 cells"
+    )
     return (face_lexkey_counts,)
 
 
@@ -172,9 +180,13 @@ def _(cell_face_hashes, num_faces_per_cell, num_verts_per_face):
 
     # Under the assumption faces appear only one (1) or two (2) times, we can use a neighbour comparison
     # If a row (i) is different from its predecessor (i-1), then it is unique (and first)!
-    is_unique = np.any(sorted_face_hashes != np.roll(sorted_face_hashes, +1, axis=0), axis=-1)
+    is_unique = np.any(
+        sorted_face_hashes != np.roll(sorted_face_hashes, +1, axis=0), axis=-1
+    )
     unique_face_hashes = sorted_face_hashes[is_unique]
-    sorted_face_ids = np.cumulative_sum(is_unique) - 1  # Otherwise we count from 1, instead of 0
+    sorted_face_ids = (
+        np.cumulative_sum(is_unique) - 1
+    )  # Otherwise we count from 1, instead of 0
     num_faces, _ = unique_face_hashes.shape
 
     cell_face_ids = np.empty_like(sorted_face_ids)
@@ -195,8 +207,12 @@ def _(cell_face_parity, face_lexkey_counts):
     print(f"\t  odd: {np.count_nonzero(cell_face_parity == 1):10,}")
     # Regardless, the number times a face is stored as -1/+1 on cells doesn't equal the number of faces.
     # Let's check external vs internal
-    print(f"Number of external faces (referenced by cells once):  {np.count_nonzero(face_lexkey_counts == 1):10,}")
-    print(f"Number of internal faces (referenced by cells twice): {np.count_nonzero(face_lexkey_counts == 2):10,}")
+    print(
+        f"Number of external faces (referenced by cells once):  {np.count_nonzero(face_lexkey_counts == 1):10,}"
+    )
+    print(
+        f"Number of internal faces (referenced by cells twice): {np.count_nonzero(face_lexkey_counts == 2):10,}"
+    )
     return
 
 
@@ -212,15 +228,19 @@ def _(cell_face_ids, cell_face_parity, cell_ids, num_faces):
 
 @app.cell
 def _(cell_face_ids, cell_face_parity, cell_ids, face_cell_ids):
-    assert np.all(face_cell_ids[cell_face_ids, cell_face_parity] == cell_ids), "Indexing is messed up"
+    assert np.all(face_cell_ids[cell_face_ids, cell_face_parity] == cell_ids), (
+        "Indexing is messed up"
+    )
     # 1 - parity => Look on the other side of the face
-    cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_parity]  
+    cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_parity]
     return
 
 
 @app.cell
 def _(mesh, unique_face_hashes):
-    face_normal, face_offset = plane_normal_and_offset(mesh.points[unique_face_hashes])
+    face_normal, face_offset = plane_normal_and_offset(
+        mesh.points[unique_face_hashes]
+    )
     return
 
 

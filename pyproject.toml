@@ -24,8 +24,13 @@ dev = [
     "ipython>=9.7.0",
     "marimo>=0.20.4",
     "patdb",
+    "pyrefly>=0.57.1",
     "pytest>=9.0.2",
+    "python-lsp-ruff>=2.3.0",
+    "python-lsp-server>=1.14.0",
+    "ruff>=0.15.7",
     "scipy>=1.16.3",
+    "websockets>=16.0",
 ]
 
 [build-system]

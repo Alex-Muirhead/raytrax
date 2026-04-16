@@ -96,6 +96,12 @@ def plane_normal_and_offset(arr, *, axis: int = 0, np=np):
 def remove_double_faces(face_keys): ...
 
 
+def rearrange(array, *, to):
+    out = np.empty_like(array)
+    out[to] = array
+    return out
+
+
 def process_cell_block(cell_block, *, debug: bool = False):
     """TODO."""
     cell_face_structure = FACE_DEFINITIONS[cell_block.type]
@@ -104,7 +110,7 @@ def process_cell_block(cell_block, *, debug: bool = False):
     num_faces_per_cell = len(cell_face_structure)
     num_verts_per_face, *other = set(len(ids) for ids in cell_face_structure)
     if other:
-        raise ValueError("Cannot handle meshes with variable faces")
+        raise ValueError("Cannot handle meshes with variable faces per cell")
 
     # Prefixes!
     #  - `cell_` has first axis indexing cell
@@ -115,7 +121,7 @@ def process_cell_block(cell_block, *, debug: bool = False):
     cell_face_vertices = cell_block.data[:, cell_face_structure]
 
     # V-mapping makes this muuuch faster
-    cell_face_keys, cell_face_paritybit = sort3_with_parity_bit(cell_face_vertices, axis=1)
+    cell_face_keys, cell_face_paritybit = sort3_with_parity_bit(cell_face_vertices, axis=2)
 
     if debug:
         print("Number of faces that are referenced with parity")
@@ -126,17 +132,16 @@ def process_cell_block(cell_block, *, debug: bool = False):
         assert np.max(face_lexkey_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
 
     # Find the unique faces (efficiently)
-    all_face_keys = cell_face_keys.reshape(cell_face_keys, (-1, num_verts_per_face))
+    all_face_keys = cell_face_keys.reshape((-1, num_verts_per_face))
     face_ordering = np.lexsort(np.unstack(all_face_keys, axis=1)[::-1])
-    all_face_keys = all_face_keys[face_ordering]
+    all_face_keys = all_face_keys[face_ordering, :]
 
-    is_unique_face = np.any(all_face_keys != np.roll(all_face_keys, +1, axis=0))
+    is_unique_face = np.any(all_face_keys != np.roll(all_face_keys, +1, axis=0), axis=-1)
     face_keys = all_face_keys[is_unique_face]
     all_face_ids = np.cumulative_sum(is_unique_face) - 1  # Accumulative version of count_nonzero
 
     # Put it back from a flattened form
-    all_face_ids = np.empty_like(all_face_ids)
-    all_face_ids[face_ordering] = all_face_ids
+    all_face_ids = rearrange(all_face_ids, to=face_ordering)
     cell_face_ids = all_face_ids.reshape((-1, num_faces_per_cell))
 
     cell_ids = np.expand_dims(range(num_cells), axis=1)  # Column vector
