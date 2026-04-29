@@ -1,4 +1,3 @@
-import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -93,13 +92,52 @@ def plane_normal_and_offset(arr, *, axis: int = 0, np=np):
     return normal, offset
 
 
-def remove_double_faces(face_keys): ...
-
-
-def rearrange(array, *, to):
+def rearrange(array, *, from_):
     out = np.empty_like(array)
-    out[to] = array
+    out[from_] = array
     return out
+
+
+def lex_unique(
+    keys,
+    return_index: bool = False,
+    return_inverse: bool = False,
+    return_counts: bool = False,
+):
+    """A stripped-down version of numpy.unique that uses lexsort on keys."""
+    if len(keys.shape) != 2:
+        raise ValueError("Keys must be 2 dimensional")
+
+    sorting_order = np.lexsort(np.unstack(keys, axis=1))
+
+    # <--- Start region of "ordered faces"
+    sorted_keys = keys[sorting_order, :]
+    # If we represent "sorted_keys" as letters (for simplicity).
+    #
+    #          sorted_keys      :: a, b, b, c, c, d, e, f, f, g, ..., z, z
+    #  np.roll(sorted_keys, +1) :: z, a, b, b, c, c, d, e, f, f, g, ..., z
+    # ------------------------- :: ---------------------------------------
+    #                 mask      :: T, T, F, T, F, T, T, T, F, T,    ..., F
+    #     sorted_keys[mask]     :: a, b, c, d, e, f, g, ...
+    #       sorted_key_ids      :: 0, 1, 1, 2, 2, 3, 4, 5, 5, 6, ..., n, n
+    #
+    # We guarantee that the first face_key must be the first occurance by ordering.
+    # Therefore, the first face_id is guaranteed to be 0.
+    is_first_instance = np.any(sorted_keys != np.roll(sorted_keys, +1, axis=0), axis=-1)
+    ret = (sorted_keys[is_first_instance],)
+
+    if return_index:
+        ret += (sorting_order[is_first_instance],)
+    if return_inverse:
+        sorted_key_ids = np.cumulative_sum(is_first_instance) - 1  # Accumulative version of count_nonzero
+        key_ids = np.empty_like(sorting_order)
+        key_ids[sorting_order] = sorted_key_ids
+        ret += (key_ids,)
+    if return_counts:
+        idx = np.concat(np.nonzero(is_first_instance) + ([is_first_instance.size],))
+        ret += (np.diff(idx),)
+
+    return ret
 
 
 def process_cell_block(cell_block, *, debug: bool = False):
@@ -121,31 +159,24 @@ def process_cell_block(cell_block, *, debug: bool = False):
     cell_face_vertices = cell_block.data[:, cell_face_structure]
 
     # V-mapping makes this muuuch faster
-    cell_face_keys, cell_face_paritybit = sort3_with_parity_bit(cell_face_vertices, axis=2)
+    _cell_face_keys, cell_face_paritybit = sort3_with_parity_bit(cell_face_vertices, axis=2)
 
     if debug:
         print("Number of faces that are referenced with parity")
         print(f"\t even: {np.count_nonzero(cell_face_paritybit == 0):10,}")
         print(f"\t  odd: {np.count_nonzero(cell_face_paritybit == 1):10,}")
 
-        _, face_lexkey_counts = np.unique(cell_face_keys, return_counts=True, axis=0)
+        _, face_lexkey_counts = np.unique(_cell_face_keys, return_counts=True, axis=0)
         assert np.max(face_lexkey_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
 
     # Find the unique faces (efficiently)
-    all_face_keys = cell_face_keys.reshape((-1, num_verts_per_face))
-    face_ordering = np.lexsort(np.unstack(all_face_keys, axis=1)[::-1])
-    all_face_keys = all_face_keys[face_ordering, :]
+    _all_face_keys = _cell_face_keys.reshape((-1, num_verts_per_face))
+    _face_keys, all_face_ids = lex_unique(_all_face_keys, return_inverse=True)
 
-    is_unique_face = np.any(all_face_keys != np.roll(all_face_keys, +1, axis=0), axis=-1)
-    face_keys = all_face_keys[is_unique_face]
-    all_face_ids = np.cumulative_sum(is_unique_face) - 1  # Accumulative version of count_nonzero
-
-    # Put it back from a flattened form
-    all_face_ids = rearrange(all_face_ids, to=face_ordering)
-    cell_face_ids = all_face_ids.reshape((-1, num_faces_per_cell))
+    cell_face_ids = all_face_ids.reshape((num_cells, num_faces_per_cell))
 
     cell_ids = np.expand_dims(range(num_cells), axis=1)  # Column vector
-    num_faces, _ = face_keys.shape
+    num_faces, _ = _face_keys.shape
 
     # WARN: We are using a sentinal value of -1 here!
     face_cell_ids = np.full((num_faces, 2), fill_value=-1, dtype=int)
