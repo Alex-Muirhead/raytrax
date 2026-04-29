@@ -1,4 +1,3 @@
-import jax.numpy as jnp
 import numpy as np
 
 FACE_DEFINITIONS: dict[str, list[tuple[int, ...]]] = {
@@ -60,22 +59,22 @@ FACE_DEFINITIONS: dict[str, list[tuple[int, ...]]] = {
 }
 
 
-def sort3_with_parity_bit(arr, *, axis: int = 0, np=np):
+def sort3_with_parity_bit(arr, *, axis: int = 0):
     """Sorting for 3 elements, returns (sorted, parity)."""
-    a, b, c = jnp.unstack(arr, axis=axis)
+    a, b, c = np.unstack(arr, axis=axis)
     swaps = 0
 
     def cmp_swap(x, y, s):
         need_swap = x > y
-        lo = jnp.where(need_swap, y, x)
-        hi = jnp.where(need_swap, x, y)
-        return lo, hi, s + jnp.where(need_swap, 1, 0)
+        lo = np.where(need_swap, y, x)
+        hi = np.where(need_swap, x, y)
+        return lo, hi, s + np.where(need_swap, 1, 0)
 
     a, b, swaps = cmp_swap(a, b, swaps)
     b, c, swaps = cmp_swap(b, c, swaps)
     a, b, swaps = cmp_swap(a, b, swaps)
 
-    sorted_arr = jnp.stack([a, b, c], axis=axis)
+    sorted_arr = np.stack([a, b, c], axis=axis)
     parity_bit = swaps % 2
     return sorted_arr, parity_bit
 
@@ -123,7 +122,8 @@ def lex_unique(
     #
     # We guarantee that the first face_key must be the first occurance by ordering.
     # Therefore, the first face_id is guaranteed to be 0.
-    is_first_instance = np.any(sorted_keys != np.roll(sorted_keys, +1, axis=0), axis=-1)
+    is_first_instance = np.ones(sorting_order.size, dtype=bool)
+    is_first_instance[1:] = np.any(sorted_keys[1:] != sorted_keys[:-1], axis=-1)
     ret = (sorted_keys[is_first_instance],)
 
     if return_index:
@@ -188,3 +188,5 @@ def process_cell_block(cell_block, *, debug: bool = False):
     # Now we reconstruct adjacency!
     # WARN: We are using a sentinal value of -1 here!
     cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_paritybit]
+
+    return cell_to_cell, face_cell_ids

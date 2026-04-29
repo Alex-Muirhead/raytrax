@@ -10,5 +10,8 @@ wheels/
 # Virtual environments
 .venv
 
+# Config directories
+.claude
+
 # Big files
 cylinder.msh
