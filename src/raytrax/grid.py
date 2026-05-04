@@ -1,4 +1,6 @@
+from raytrax.gridtypes import MeshTopology
 import numpy as np
+from raytrax.gridtypes import CellTopology, FaceTopology
 
 FACE_DEFINITIONS: dict[str, list[tuple[int, ...]]] = {
     # 2D elements: "faces" are edges.
@@ -134,7 +136,7 @@ def lex_unique(
     return ret
 
 
-def process_cell_block(cell_block, *, debug: bool = False):
+def process_cell_block(cell_block, *, debug: bool = False) -> tuple[CellTopology, FaceTopology]:
     """TODO."""
     cell_face_structure = FACE_DEFINITIONS[cell_block.type]
 
@@ -150,9 +152,11 @@ def process_cell_block(cell_block, *, debug: bool = False):
     #  - `all_face_` has duplicate faces (can be reshaped to `cell_face_`)
     #  - `face_` has first axis indexing face
 
+    cell_vertices = cell_block.data
     cell_face_vertices = cell_block.data[:, cell_face_structure]
 
-    # V-mapping makes this muuuch faster
+    # --- Step 1. Discover the faces ---
+
     _cell_face_keys, cell_face_paritybit = sort_with_parity_bit(cell_face_vertices, axis=2)
 
     # Find the unique faces (efficiently)
@@ -164,12 +168,17 @@ def process_cell_block(cell_block, *, debug: bool = False):
 
     cell_face_ids = all_face_ids.reshape((num_cells, num_faces_per_cell))
 
+    # --- Step 2. Assemble topology information ---
+    # Knit together two-way information. (Cell -> Face) & (Face -> Cell)
+
     cell_ids = np.expand_dims(range(num_cells), axis=1)  # Column vector
-    num_faces, _ = face_keys.shape
 
     # WARN: We are using a sentinal value of -1 here!
+    num_faces, _ = face_keys.shape
     face_cell_ids = np.full((num_faces, 2), fill_value=-1, dtype=int)
     face_cell_ids[cell_face_ids, cell_face_paritybit] = cell_ids
+
+    face_topology = FaceTopology(vertices=face_keys, cells=face_cell_ids)
 
     if debug:
         assert np.all(face_cell_ids[cell_face_ids, cell_face_paritybit] == cell_ids), "Indexing is messed up"
@@ -177,5 +186,13 @@ def process_cell_block(cell_block, *, debug: bool = False):
     # Now we reconstruct adjacency!
     # WARN: We are using a sentinal value of -1 here!
     cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_paritybit]
+    cell_face_paritysign = np.where(cell_face_paritybit == 0, -1, +1)
 
-    return cell_to_cell, face_cell_ids, face_keys
+    cell_topology = CellTopology(
+        face_idx=cell_face_ids,
+        face_sgn=cell_face_paritysign,
+        vertices=cell_vertices,
+        neighbours=cell_to_cell,
+    )
+
+    return MeshTopology(faces=face_topology, cells=cell_topology)

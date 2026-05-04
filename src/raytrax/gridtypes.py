@@ -36,6 +36,8 @@ class FaceTopology(eqx.Module):
 
 
 class FaceGeometry(eqx.Module):
+    """Numerical values of geometric properties of each face."""
+
     area: Array
     normal: Array
     offset: Array
@@ -46,15 +48,30 @@ class Face(eqx.Module):
     topology: FaceTopology
 
 
-class FaceAttachment(eqx.Module):
-    face: Array
-    sign: Array
-
-
 class CellTopology(eqx.Module):
-    faces: FaceAttachment  # For crossing
+    faces: Array  #      > Signed index, with sign representing face direction
+    vertices: Array  #   > For random sampling
+    neighbours: Array  # > Index of neighbouring cells
 
 
 class CellGeometry(eqx.Module):
-    volume: Array  #   > For adding energy
-    vertices: Array  # > For random sampling
+    """Numerical values of geometric properties of each cell."""
+
+    volume: Array  #   > Volume of cell
+    centroid: Array  # > Coordinate
+
+
+class MeshTopology(eqx.Module):
+    """Topological information of the mesh. Stored as indices."""
+
+    faces: FaceTopology
+    cells: CellTopology
+
+    def build_geometric(self, vertex_coords: Array) -> MeshGeometry: ...
+
+
+class MeshGeometry(eqx.Module):
+    """Geometric properties of the mesh. Stored as values."""
+
+    faces: FaceGeometry
+    cells: CellGeometry
