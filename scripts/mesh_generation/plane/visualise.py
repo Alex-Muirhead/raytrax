@@ -1,4 +1,3 @@
-import argparse
 import pyvista as pv
 from tap import Tap
 
@@ -6,16 +5,8 @@ from tap import Tap
 def visualise_cross_section(mesh_file: str, whole_cells: bool = False) -> None:
     mesh = pv.read(mesh_file)
 
-    if whole_cells:
-        # Select all cells that have at least one vertex with y <= 0,
-        # so no cell is cut in half by the clipping plane.
-        half = mesh.extract_points(mesh.points[:, 1] <= 0, adjacent_cells=True)
-    else:
-        # Clip at y=0, keeping the y<=0 half (cuts through cells at the boundary).
-        half = mesh.clip(normal="y", origin=(0, 0, 0))
-
     plotter = pv.Plotter()
-    plotter.add_mesh(half, show_edges=True, color="lightblue", edge_color="gray")
+    plotter.add_mesh(mesh, show_edges=True, color="lightblue", edge_color="gray")
     plotter.add_axes()
     plotter.show()
 

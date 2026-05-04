@@ -4,7 +4,7 @@ Scripts for generating unstructured meshes with Gmsh and visualising them with m
 
 ## Key files
 
-- `main.py` — generates a cylinder mesh using the Gmsh OpenCASCADE kernel, writes to `.msh`
+- `generate.py` — generates a cylinder mesh using the Gmsh OpenCASCADE kernel, writes to `.msh`
 - `visualise.py` — visualises a mesh file with PyVista; supports clipped and whole-cell half-space views
 
 ## Environment
