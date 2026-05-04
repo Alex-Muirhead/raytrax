@@ -59,9 +59,8 @@ FACE_DEFINITIONS: dict[str, list[tuple[int, ...]]] = {
 }
 
 
-def sort3_with_parity_bit(arr, *, axis: int = 0):
-    """Sorting for 3 elements, returns (sorted, parity)."""
-    a, b, c = np.unstack(arr, axis=axis)
+def sort_with_parity_bit(arr, *, axis: int = -2):
+    """Sorting for 2 and 3 elements, returns (sorted, parity)."""
     swaps = 0
 
     def cmp_swap(x, y, s):
@@ -70,11 +69,24 @@ def sort3_with_parity_bit(arr, *, axis: int = 0):
         hi = np.where(need_swap, x, y)
         return lo, hi, s + np.where(need_swap, 1, 0)
 
-    a, b, swaps = cmp_swap(a, b, swaps)
-    b, c, swaps = cmp_swap(b, c, swaps)
-    a, b, swaps = cmp_swap(a, b, swaps)
+    match arr.shape[axis]:
+        case 2:
+            a, b = np.unstack(arr, axis=axis)
+            a, b, swaps = cmp_swap(a, b, swaps)
+            sorted_arr = np.stack([a, b], axis=axis)
 
-    sorted_arr = np.stack([a, b, c], axis=axis)
+        case 3:
+            a, b, c = np.unstack(arr, axis=axis)
+
+            a, b, swaps = cmp_swap(a, b, swaps)
+            b, c, swaps = cmp_swap(b, c, swaps)
+            a, b, swaps = cmp_swap(a, b, swaps)
+
+            sorted_arr = np.stack([a, b, c], axis=axis)
+
+        case _:
+            raise NotImplementedError("Sorting only implemented for lengths 2 and 3")
+
     parity_bit = swaps % 2
     return sorted_arr, parity_bit
 

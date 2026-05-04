@@ -1,32 +1,76 @@
 import numpy as np
 import pytest
 
-from raytrax.grid import sort3_with_parity_bit, lex_unique
+from raytrax.grid import sort_with_parity_bit, lex_unique
 
 
-class TestSort3WithParityBit:
-    @pytest.mark.parametrize("perm, expected_parity", [
-        ([1, 2, 3], 0),  # identity permutation
-        ([1, 3, 2], 1),
-        ([2, 1, 3], 1),
-        ([2, 3, 1], 0),
-        ([3, 1, 2], 0),
-        ([3, 2, 1], 1),
-    ])
+class TestSortWithParityBit:
+    # --- length-2 ---
+
+    @pytest.mark.parametrize(
+        "perm, expected_parity",
+        [
+            ([1, 2], 0),  # already sorted
+            ([2, 1], 1),  # one swap
+        ],
+    )
+    def test_all_permutations_of_two(self, perm, expected_parity):
+        arr = np.array(perm)
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
+        assert np.array_equal(sorted_arr, np.array([1, 2]))
+        assert int(parity) == expected_parity
+
+    def test_equal_elements_two(self):
+        arr = np.array([3, 3])
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
+        assert np.array_equal(sorted_arr, np.array([3, 3]))
+        assert int(parity) == 0
+
+    def test_batched_two_axis0(self):
+        # Shape (2, N): each column is an independent pair to sort.
+        # Column 0: (2, 1) -> [1, 2], parity 1
+        # Column 1: (1, 2) -> [1, 2], parity 0
+        arr = np.array([[2, 1], [1, 2]])
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
+        assert np.array_equal(sorted_arr, np.array([[1, 1], [2, 2]]))
+        assert np.array_equal(parity, np.array([1, 0]))
+
+    def test_batched_two_axis1(self):
+        # Shape (N, 2): each row is an independent pair to sort.
+        # Row 0: (2, 1) -> [1, 2], parity 1
+        # Row 1: (1, 2) -> [1, 2], parity 0
+        arr = np.array([[2, 1], [1, 2]])
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=1)
+        assert np.array_equal(sorted_arr, np.array([[1, 2], [1, 2]]))
+        assert np.array_equal(parity, np.array([1, 0]))
+
+    # --- length-3 ---
+
+    @pytest.mark.parametrize(
+        "perm, expected_parity",
+        [
+            ([1, 2, 3], 0),  # identity permutation
+            ([1, 3, 2], 1),
+            ([2, 1, 3], 1),
+            ([2, 3, 1], 0),
+            ([3, 1, 2], 0),
+            ([3, 2, 1], 1),
+        ],
+    )
     def test_all_permutations_of_three(self, perm, expected_parity):
         arr = np.array(perm)
-        sorted_arr, parity = sort3_with_parity_bit(arr, axis=0)
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
         assert np.array_equal(sorted_arr, np.array([1, 2, 3]))
         assert int(parity) == expected_parity
 
     def test_equal_adjacent_elements(self):
         arr = np.array([2, 2, 1])
-        sorted_arr, _ = sort3_with_parity_bit(arr, axis=0)
+        sorted_arr, _ = sort_with_parity_bit(arr, axis=0)
         assert np.array_equal(sorted_arr, np.array([1, 2, 2]))
 
     def test_all_equal_elements(self):
         arr = np.array([5, 5, 5])
-        sorted_arr, parity = sort3_with_parity_bit(arr, axis=0)
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
         assert np.array_equal(sorted_arr, np.array([5, 5, 5]))
         assert int(parity) == 0
 
@@ -36,7 +80,7 @@ class TestSort3WithParityBit:
         # Column 1: (1, 2, 3) -> [1,2,3], parity 0
         # Column 2: (2, 3, 1) -> [1,2,3], parity 0
         arr = np.array([[3, 1, 2], [1, 2, 3], [2, 3, 1]])
-        sorted_arr, parity = sort3_with_parity_bit(arr, axis=0)
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
         assert np.array_equal(sorted_arr, np.array([[1, 1, 1], [2, 2, 2], [3, 3, 3]]))
         assert np.array_equal(parity, np.array([0, 0, 0]))
 
@@ -45,14 +89,21 @@ class TestSort3WithParityBit:
         # Row 0: (3, 1, 2) -> [1,2,3], parity 0
         # Row 1: (1, 3, 2) -> [1,2,3], parity 1
         arr = np.array([[3, 1, 2], [1, 3, 2]])
-        sorted_arr, parity = sort3_with_parity_bit(arr, axis=1)
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=1)
         assert np.array_equal(sorted_arr, np.array([[1, 2, 3], [1, 2, 3]]))
         assert np.array_equal(parity, np.array([0, 1]))
 
     def test_parity_is_binary(self):
-        for perm in [[1, 2, 3], [3, 2, 1], [2, 1, 3]]:
-            _, parity = sort3_with_parity_bit(np.array(perm), axis=0)
+        for perm in [[1, 2], [2, 1], [1, 2, 3], [3, 2, 1], [2, 1, 3]]:
+            _, parity = sort_with_parity_bit(np.array(perm), axis=0)
             assert int(parity) in (0, 1)
+
+    # --- error cases ---
+
+    def test_raises_for_unsupported_length(self):
+        arr = np.array([1, 2, 3, 4])
+        with pytest.raises(NotImplementedError):
+            sort_with_parity_bit(arr, axis=0)
 
 
 class TestLexUnique:
@@ -99,9 +150,7 @@ class TestLexUnique:
 
     def test_all_return_flags_consistent(self):
         keys = np.array([[1, 2], [3, 4], [1, 2], [5, 6]])
-        unique, idx, inv, counts = lex_unique(
-            keys, return_index=True, return_inverse=True, return_counts=True
-        )
+        unique, idx, inv, counts = lex_unique(keys, return_index=True, return_inverse=True, return_counts=True)
         assert np.array_equal(keys[idx], unique)
         assert np.array_equal(unique[inv], keys)
         assert np.sum(counts) == len(keys)
