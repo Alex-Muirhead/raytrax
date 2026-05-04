@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -89,9 +87,7 @@ class HyperbolicRay(eqx.Module):
 
 
 @eqx.filter_jit
-def crossing(
-    cell: ConvexCell, ray: LinearRay, epsilon: float = 0.0
-) -> tuple[Int[Array, "..."], Float[Array, "..."]]:
+def crossing(cell: ConvexCell, ray: LinearRay, epsilon: float = 0.0) -> tuple[Int[Array, "..."], Float[Array, "..."]]:
     if epsilon == 0.0:
         # We probably shouldn't use zero, due to floating precision / loss
         epsilon = np.finfo(default_floating_dtype()).resolution

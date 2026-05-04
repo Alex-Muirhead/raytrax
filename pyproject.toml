@@ -3,7 +3,7 @@ name = "raytrax"
 version = "0.1.0"
 description = "Radiation Transport (X)ccelerator"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "equinox>=0.13.2",
     "gmsh>=4.15.1",
