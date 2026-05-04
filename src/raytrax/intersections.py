@@ -1,5 +1,8 @@
+from __future__ import annotations
+
+from typing import Self
+
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Float, Int
@@ -18,7 +21,7 @@ class ConvexCell(eqx.Module):
         distance = jnp.einsum("...k,...jk->...j", points, self.normal) - self.offset
         return jnp.all(distance <= epsilon, axis=-1)
 
-    def __getitem__(self, idx) -> ConvexCell:
+    def __getitem__(self, idx) -> Self:
         return ConvexCell(
             normal=self.normal[idx],
             offset=self.offset[idx],
@@ -93,12 +96,12 @@ def crossing(cell: ConvexCell, ray: LinearRay, epsilon: float = 0.0) -> tuple[In
         epsilon = np.finfo(default_floating_dtype()).resolution
 
     # Signed distance "outside" each half-space.
-    absolute_distance = jnp.einsum("...k,...jk->...j", ray.terminus, cell.normal) - cell.offset
-    alignment = jnp.einsum("...k,...jk->...j", ray.tangent, cell.normal)
-    absolute_travel: Float[Array, "... nfaces"] = -absolute_distance / alignment
+    absolute_distance = cell.normal @ ray.terminus - cell.offset
+    alignment = cell.normal @ ray.tangent
+    absolute_travel = -absolute_distance / alignment
     # Take minimum value greater than current travel
     absolute_travel = jnp.where(alignment > epsilon, absolute_travel, jnp.nan)
-    crossing_index = jnp.nanargmin(absolute_travel, axis=-1)
+    crossing_index = jnp.nanargmin(absolute_travel)
     # We can use jnp.nanmin, but in case we need to modify the index, we can do this!
-    crossing_travel = jax.vmap(jnp.take)(absolute_travel, crossing_index) - ray.travel
+    crossing_travel = absolute_travel[crossing_index] - ray.travel
     return crossing_index, crossing_travel
