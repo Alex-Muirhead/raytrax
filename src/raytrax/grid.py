@@ -79,24 +79,6 @@ def sort3_with_parity_bit(arr, *, axis: int = 0):
     return sorted_arr, parity_bit
 
 
-def plane_normal_and_offset(arr, *, axis: int = 0, np=np):
-    """Defining a plane from 3 points, returns (normal, offset)."""
-    ref, u, v = np.unstack(arr, axis=axis)
-    # Relative vectors
-    u -= ref
-    v -= ref
-    normal = np.cross(u, v)
-    normal /= np.linalg.vector_norm(normal)  # Ensure unit vec
-    offset = np.dot(ref, normal)
-    return normal, offset
-
-
-def rearrange(array, *, from_):
-    out = np.empty_like(array)
-    out[from_] = array
-    return out
-
-
 def lex_unique(
     keys,
     return_index: bool = False,
@@ -159,24 +141,19 @@ def process_cell_block(cell_block, *, debug: bool = False):
     cell_face_vertices = cell_block.data[:, cell_face_structure]
 
     # V-mapping makes this muuuch faster
-    _cell_face_keys, cell_face_paritybit = sort3_with_parity_bit(cell_face_vertices, axis=2)
-
-    if debug:
-        print("Number of faces that are referenced with parity")
-        print(f"\t even: {np.count_nonzero(cell_face_paritybit == 0):10,}")
-        print(f"\t  odd: {np.count_nonzero(cell_face_paritybit == 1):10,}")
-
-        _, face_lexkey_counts = np.unique(_cell_face_keys, return_counts=True, axis=0)
-        assert np.max(face_lexkey_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
+    _cell_face_keys, cell_face_paritybit = sort_with_parity_bit(cell_face_vertices, axis=2)
 
     # Find the unique faces (efficiently)
     _all_face_keys = _cell_face_keys.reshape((-1, num_verts_per_face))
-    _face_keys, all_face_ids = lex_unique(_all_face_keys, return_inverse=True)
+    face_keys, all_face_ids, face_counts = lex_unique(_all_face_keys, return_inverse=True)
+
+    if debug:
+        assert np.max(face_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
 
     cell_face_ids = all_face_ids.reshape((num_cells, num_faces_per_cell))
 
     cell_ids = np.expand_dims(range(num_cells), axis=1)  # Column vector
-    num_faces, _ = _face_keys.shape
+    num_faces, _ = face_keys.shape
 
     # WARN: We are using a sentinal value of -1 here!
     face_cell_ids = np.full((num_faces, 2), fill_value=-1, dtype=int)
@@ -189,4 +166,4 @@ def process_cell_block(cell_block, *, debug: bool = False):
     # WARN: We are using a sentinal value of -1 here!
     cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_paritybit]
 
-    return cell_to_cell, face_cell_ids
+    return cell_to_cell, face_cell_ids, face_keys
