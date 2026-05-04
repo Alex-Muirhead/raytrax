@@ -12,8 +12,12 @@ from typing import TYPE_CHECKING, NamedTuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from gdtk import lmr
 from jaxtyping import Array, Bool, Float, Int
+
+try:
+    from gdtk import lmr
+except ImportError:
+    raise RuntimeError("The gdtk-py module must be installed to run this script")
 
 from raytrax.cellshapes import Shapes
 from raytrax.intersections import ConvexCell, LinearRay, crossing
@@ -52,7 +56,7 @@ class IndexDict(dict[tuple[int, int], int]):
         pairs = sorted(self.items(), key=lambda pair: pair[1])
         return list(map(lambda pair: pair[0], pairs))
 
-    def __setitem__(self, key: tuple[int, int], value: int) -> int:
+    def __setitem__(self, key: tuple[int, int], value: int) -> None:
         raise NotImplementedError("IndexDict entries are immutable")
 
 
@@ -66,9 +70,7 @@ def sliding_window(iterable, n):
         yield tuple(window)
 
 
-def construct_halfspace(
-    spanning_vertices: np.ndarray, positive_dir: np.ndarray | None = None
-) -> (np.ndarray, float):
+def construct_halfspace(spanning_vertices: np.ndarray, positive_dir: np.ndarray | None = None) -> (np.ndarray, float):
     # Assumes the vertices minimally span the dividing (hyper-)plane
     # Here we assume that each *row* is a vertex / point
     # We care about the *orientation*, so let's make everything
@@ -121,9 +123,9 @@ class Grid:
                 vertices_per_facet = 2
                 num_facets = 2 * num_cells + cell_grid_shape.i + cell_grid_shape.j
 
-                vertex_coordinates = np.stack(
-                    (sgrid.vertices.x, sgrid.vertices.y), axis=-1
-                ).reshape((num_verts, cell.dimension))
+                vertex_coordinates = np.stack((sgrid.vertices.x, sgrid.vertices.y), axis=-1).reshape(
+                    (num_verts, cell.dimension)
+                )
 
             case 3:
                 cell = Shapes.HEXAHEDRON
@@ -137,9 +139,9 @@ class Grid:
                     + cell_grid_shape.k * cell_grid_shape.i
                 )
 
-                vertex_coordinates = np.stack(
-                    (sgrid.vertices.x, sgrid.vertices.y, sgrid.vertices.z), axis=-1
-                ).reshape((num_verts, cell.dimension))
+                vertex_coordinates = np.stack((sgrid.vertices.x, sgrid.vertices.y, sgrid.vertices.z), axis=-1).reshape(
+                    (num_verts, cell.dimension)
+                )
             case _:
                 raise ValueError("Grid must have 2 or 3 dimensions")
 

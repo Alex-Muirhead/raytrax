@@ -15,15 +15,6 @@ wheels = [
 ]
 
 [[package]]
-name = "appdirs"
-version = "1.4.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d7/d8/05696357e0311f5b5c316d7b95f46c669dd9c15aaeecbb48c7d0aeb88c40/appdirs-1.4.4.tar.gz", hash = "sha256:7d5d0167b2b1ba821647616af46a749d1c653740dd0d2415100fe26e27afdf41", size = 13470, upload-time = "2020-05-11T07:59:51.037Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/00/2344469e2084fb287c2e0b57b72910309874c3245463acd6cf5e3db69324/appdirs-1.4.4-py2.py3-none-any.whl", hash = "sha256:a841dacd6b99318a741b166adb07e19ee71a274450e68237b4650ca1055ab128", size = 9566, upload-time = "2020-05-11T07:59:49.499Z" },
-]
-
-[[package]]
 name = "asttokens"
 version = "3.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -399,7 +390,6 @@ dependencies = [
     { name = "parse" },
     { name = "pyyaml" },
     { name = "scipy" },
-    { name = "wadler-lindig" },
 ]
 
 [package.metadata]
@@ -411,7 +401,6 @@ requires-dist = [
     { name = "pyvista", marker = "extra == 'pyvista'" },
     { name = "pyyaml" },
     { name = "scipy" },
-    { name = "wadler-lindig", specifier = ">=0.1.7" },
 ]
 provides-extras = ["pandas", "pyvista"]
 
@@ -1206,31 +1195,6 @@ wheels = [
 ]
 
 [[package]]
-name = "patdb"
-version = "0.1.1"
-source = { directory = "../../Software/patdb" }
-dependencies = [
-    { name = "click" },
-    { name = "prompt-toolkit" },
-    { name = "ptpython" },
-    { name = "pygments" },
-    { name = "typing-extensions" },
-    { name = "wadler-lindig" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "click", specifier = ">=8.1.7" },
-    { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "prompt-toolkit", specifier = ">=3.0.46" },
-    { name = "ptpython", specifier = ">=3.0.27" },
-    { name = "pygments", specifier = ">=2.14.0" },
-    { name = "typing-extensions", specifier = ">=4.5.0" },
-    { name = "wadler-lindig", specifier = ">=0.1.0" },
-]
-provides-extras = ["dev"]
-
-[[package]]
 name = "pathspec"
 version = "1.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -1379,21 +1343,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/04/78/0acd37ca84ce3ddffaa92ef0f571e073faa6d8ff1f0559ab1272188ea2be/psutil-7.2.2-cp36-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b58fabe35e80b264a4e3bb23e6b96f9e45a3df7fb7eed419ac0e5947c61e47cc", size = 148266, upload-time = "2026-01-28T18:15:31.597Z" },
     { url = "https://files.pythonhosted.org/packages/b4/90/e2159492b5426be0c1fef7acba807a03511f97c5f86b3caeda6ad92351a7/psutil-7.2.2-cp37-abi3-win_amd64.whl", hash = "sha256:eb7e81434c8d223ec4a219b5fc1c47d0417b12be7ea866e24fb5ad6e84b3d988", size = 137737, upload-time = "2026-01-28T18:15:33.849Z" },
     { url = "https://files.pythonhosted.org/packages/8c/c7/7bb2e321574b10df20cbde462a94e2b71d05f9bbda251ef27d104668306a/psutil-7.2.2-cp37-abi3-win_arm64.whl", hash = "sha256:8c233660f575a5a89e6d4cb65d9f938126312bca76d8fe087b947b3a1aaac9ee", size = 134617, upload-time = "2026-01-28T18:15:36.514Z" },
-]
-
-[[package]]
-name = "ptpython"
-version = "3.0.32"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "appdirs" },
-    { name = "jedi" },
-    { name = "prompt-toolkit" },
-    { name = "pygments" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b6/8c/7e904ceeb512b4530c7ca1d918d3565d694a1fa7df337cdfc36a16347d68/ptpython-3.0.32.tar.gz", hash = "sha256:11651778236de95c582b42737294e50a66ba4a21fa01c0090ea70815af478fe0", size = 74080, upload-time = "2025-11-20T21:20:48.27Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4c/ac/0e35e5d7afd47ab0e2c71293ed2ad18df91a2a4a008c0ff59c2f22def377/ptpython-3.0.32-py3-none-any.whl", hash = "sha256:16435d323e5fc0a685d5f4dc5bb4494fb68ac68736689cd1247e1eda9369b616", size = 68099, upload-time = "2025-11-20T21:20:46.634Z" },
 ]
 
 [[package]]
@@ -1671,7 +1620,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "equinox" },
-    { name = "gdtk" },
     { name = "gmsh" },
     { name = "jax", extra = ["cuda12"] },
     { name = "jaxtyping" },
@@ -1679,13 +1627,18 @@ dependencies = [
     { name = "meshio" },
     { name = "numpy" },
     { name = "pyvista" },
+    { name = "typed-argument-parser" },
+]
+
+[package.optional-dependencies]
+gdtk = [
+    { name = "gdtk" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "ipython" },
     { name = "marimo" },
-    { name = "patdb" },
     { name = "pyrefly" },
     { name = "pytest" },
     { name = "python-lsp-ruff" },
@@ -1698,7 +1651,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "equinox", specifier = ">=0.13.2" },
-    { name = "gdtk", editable = "../../GDTk/gdtk.pythonic-dataclasses/src/gdtk-py" },
+    { name = "gdtk", marker = "extra == 'gdtk'", editable = "../../GDTk/gdtk.pythonic-dataclasses/src/gdtk-py" },
     { name = "gmsh", specifier = ">=4.15.1" },
     { name = "jax", extras = ["cuda12"], specifier = ">=0.8.1" },
     { name = "jaxtyping", specifier = ">=0.3.3" },
@@ -1706,13 +1659,14 @@ requires-dist = [
     { name = "meshio", specifier = ">=5.3.5" },
     { name = "numpy", specifier = ">=2.3.4" },
     { name = "pyvista", specifier = ">=0.46.4" },
+    { name = "typed-argument-parser", specifier = ">=1.12.0" },
 ]
+provides-extras = ["gdtk"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "ipython", specifier = ">=9.7.0" },
     { name = "marimo", specifier = ">=0.20.4" },
-    { name = "patdb", directory = "../../Software/patdb" },
     { name = "pyrefly", specifier = ">=0.57.1" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "python-lsp-ruff", specifier = ">=2.3.0" },
@@ -1899,6 +1853,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/eb/79/72064e6a701c2183016abbbfedaba506d81e30e232a68c9f0d6f6fcd1574/traitlets-5.14.3.tar.gz", hash = "sha256:9ed0579d3502c94b4b3732ac120375cda96f923114522847de4b3bb98b96b6b7", size = 161621, upload-time = "2024-04-19T11:11:49.746Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/c0/8f5d070730d7836adc9c9b6408dec68c6ced86b304a9b26a14df072a6e8c/traitlets-5.14.3-py3-none-any.whl", hash = "sha256:b74e89e397b1ed28cc831db7aea759ba6640cb3de13090ca145426688ff1ac4f", size = 85359, upload-time = "2024-04-19T11:11:46.763Z" },
+]
+
+[[package]]
+name = "typed-argument-parser"
+version = "1.12.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docstring-parser" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/20/d0/5240b74b8d76e20eadbd79fe7ce5daeb1bf86d70d923817563728ccf297a/typed_argument_parser-1.12.0.tar.gz", hash = "sha256:cf5f7cafac869fb9627c4c90394e321c895d58872d865ad2c62e65668d259fa0", size = 244627, upload-time = "2026-03-28T21:01:46.273Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/56/0c/0607f5ac258aa36621a18cec7e14b87b49c972348a6937ea19cfea81d7b7/typed_argument_parser-1.12.0-py3-none-any.whl", hash = "sha256:9cdf26c710b9cde2992ff0763288598628ac852d9a1accf5269837cd6e24a930", size = 32833, upload-time = "2026-03-28T21:01:44.999Z" },
 ]
 
 [[package]]
