@@ -1,7 +1,9 @@
+import meshio
 import numpy as np
 import pytest
+from pytest import approx
 
-from raytrax.grid import sort_with_parity_bit, lex_unique
+from raytrax.grid import lex_unique, process_cell_block, sort_with_parity_bit
 
 
 class TestSortWithParityBit:
@@ -238,3 +240,177 @@ def _rows_equal_as_sets(a: np.ndarray, b: np.ndarray) -> bool:
     a_sorted = a[np.lexsort(a.T[::-1])]
     b_sorted = b[np.lexsort(b.T[::-1])]
     return np.array_equal(a_sorted, b_sorted)
+
+
+def _make_cell_block(cell_type: str, cells):
+    return meshio.CellBlock(cell_type, np.asarray(cells))
+
+
+def _find_face_row(face_keys: np.ndarray, vertices) -> int:
+    """Return the row index in face_keys whose entries (as a set) match `vertices`."""
+    target = set(vertices)
+    matches = [i for i, row in enumerate(face_keys) if set(row.tolist()) == target]
+    assert len(matches) == 1, f"expected exactly one face matching {vertices}, found {matches}"
+    return matches[0]
+
+
+class TestProcessCellBlockTriangle:
+    def test_single_triangle_topology(self):
+        block = _make_cell_block("triangle", [[0, 1, 2]])
+        topo = process_cell_block(block)
+
+        # Three unique edges, each with two vertices
+        assert topo.faces.vertices.shape == (3, 2)
+        # Every face is on the boundary: exactly one cell + one sentinel
+        boundary_count = (topo.faces.cells == -1).sum(axis=1)
+        assert np.all(boundary_count == 1)
+        # The lone cell appears once per face
+        assert (topo.faces.cells == 0).sum() == 3
+        # Cell has three faces, all boundary
+        assert topo.cells.face_ids.shape == (1, 3)
+        assert topo.cells.face_signs.shape == (1, 3)
+        assert np.all(np.isin(topo.cells.face_signs, [-1, +1]))
+        assert np.all(topo.cells.neighbours == -1)
+
+    def test_two_adjacent_triangles_share_a_face(self):
+        # Quad split along diagonal (0,2)
+        block = _make_cell_block("triangle", [[0, 1, 2], [0, 2, 3]])
+        topo = process_cell_block(block)
+
+        # Five unique edges: 3 + 3 - 1 shared
+        assert topo.faces.vertices.shape == (5, 2)
+
+        # Exactly one interior face (with both cells assigned)
+        boundary_count = (topo.faces.cells == -1).sum(axis=1)
+        assert (boundary_count == 0).sum() == 1
+        assert (boundary_count == 1).sum() == 4
+
+        # The shared edge is (0,2), and it connects cells 0 and 1
+        shared = _find_face_row(topo.faces.vertices, [0, 2])
+        assert set(topo.faces.cells[shared].tolist()) == {0, 1}
+
+        # Adjacency: each cell has exactly one non-boundary neighbour, the other cell
+        cell0_neighbours = set(topo.cells.neighbours[0].tolist()) - {-1}
+        cell1_neighbours = set(topo.cells.neighbours[1].tolist()) - {-1}
+        assert cell0_neighbours == {1}
+        assert cell1_neighbours == {0}
+
+
+class TestProcessCellBlockQuad:
+    def test_single_quad_topology(self):
+        block = _make_cell_block("quad", [[0, 1, 2, 3]])
+        topo = process_cell_block(block)
+
+        assert topo.faces.vertices.shape == (4, 2)
+        boundary_count = (topo.faces.cells == -1).sum(axis=1)
+        assert np.all(boundary_count == 1)
+        assert topo.cells.face_ids.shape == (1, 4)
+        assert np.all(topo.cells.neighbours == -1)
+
+
+class TestProcessCellBlockTetra:
+    def test_single_tetrahedron_topology(self):
+        block = _make_cell_block("tetra", [[0, 1, 2, 3]])
+        topo = process_cell_block(block)
+
+        # Four triangular faces, all boundary
+        assert topo.faces.vertices.shape == (4, 3)
+        boundary_count = (topo.faces.cells == -1).sum(axis=1)
+        assert np.all(boundary_count == 1)
+        assert topo.cells.face_ids.shape == (1, 4)
+        assert np.all(topo.cells.neighbours == -1)
+
+    def test_two_adjacent_tetrahedra_share_a_face(self):
+        # Tet 0 fills the corner near origin; tet 1 has apex (1,1,1)
+        # and winds opposite (1,3,2) so the shared face has consistent orientation.
+        block = _make_cell_block("tetra", [[0, 1, 2, 3], [4, 1, 3, 2]])
+        topo = process_cell_block(block)
+
+        # 4 + 4 - 1 = 7 unique faces
+        assert topo.faces.vertices.shape == (7, 3)
+
+        # Exactly one interior face
+        boundary_count = (topo.faces.cells == -1).sum(axis=1)
+        assert (boundary_count == 0).sum() == 1
+
+        # Shared face is the triangle (1,2,3)
+        shared = _find_face_row(topo.faces.vertices, [1, 2, 3])
+        assert set(topo.faces.cells[shared].tolist()) == {0, 1}
+
+        cell0_neighbours = set(topo.cells.neighbours[0].tolist()) - {-1}
+        cell1_neighbours = set(topo.cells.neighbours[1].tolist()) - {-1}
+        assert cell0_neighbours == {1}
+        assert cell1_neighbours == {0}
+
+
+class TestProcessCellBlockGeometry:
+    """End-to-end: process_cell_block + MeshTopology.build_geometric."""
+
+    def test_unit_triangle(self):
+        points = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        block = _make_cell_block("triangle", [[0, 1, 2]])
+        geom = process_cell_block(block).build_geometric(points)
+
+        assert float(geom.cells.volume[0]) == approx(0.5)
+        assert np.allclose(geom.cells.centroid[0], [1.0 / 3, 1.0 / 3])
+
+    def test_unit_quad(self):
+        points = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+        block = _make_cell_block("quad", [[0, 1, 2, 3]])
+        geom = process_cell_block(block).build_geometric(points)
+
+        assert float(geom.cells.volume[0]) == approx(1.0)
+        assert np.allclose(geom.cells.centroid[0], [0.5, 0.5])
+
+    def test_unit_tetrahedron(self):
+        points = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ])
+        block = _make_cell_block("tetra", [[0, 1, 2, 3]])
+        geom = process_cell_block(block).build_geometric(points)
+
+        assert float(geom.cells.volume[0]) == approx(1.0 / 6)
+        assert np.allclose(geom.cells.centroid[0], [0.25, 0.25, 0.25])
+
+    def test_two_triangles_split_unit_square(self):
+        # Diagonal split: each triangle has area 1/2
+        points = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+        block = _make_cell_block("triangle", [[0, 1, 2], [0, 2, 3]])
+        geom = process_cell_block(block).build_geometric(points)
+
+        assert np.allclose(geom.cells.volume, [0.5, 0.5])
+        # Centroid of triangle (0,0),(1,0),(1,1) is (2/3, 1/3)
+        # Centroid of triangle (0,0),(1,1),(0,1) is (1/3, 2/3)
+        assert np.allclose(geom.cells.centroid[0], [2.0 / 3, 1.0 / 3])
+        assert np.allclose(geom.cells.centroid[1], [1.0 / 3, 2.0 / 3])
+
+    def test_two_tetrahedra(self):
+        # Tet 0 (corner at origin) + tet 1 (apex at (1,1,1))
+        points = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+        ])
+        block = _make_cell_block("tetra", [[0, 1, 2, 3], [4, 1, 3, 2]])
+        geom = process_cell_block(block).build_geometric(points)
+
+        # Corner tet: V = 1/6, centroid at (1/4, 1/4, 1/4)
+        assert float(geom.cells.volume[0]) == approx(1.0 / 6)
+        assert np.allclose(geom.cells.centroid[0], [0.25, 0.25, 0.25])
+        # Apex tet: V = 1/3 (mean of 4 vertices = (0.5, 0.5, 0.5))
+        assert float(geom.cells.volume[1]) == approx(1.0 / 3)
+        assert np.allclose(geom.cells.centroid[1], [0.5, 0.5, 0.5])
+
+    def test_translated_triangle(self):
+        # Translation invariance: shift unit triangle by (10, 5)
+        points = np.array([[10.0, 5.0], [11.0, 5.0], [10.0, 6.0]])
+        block = _make_cell_block("triangle", [[0, 1, 2]])
+        geom = process_cell_block(block).build_geometric(points)
+
+        assert float(geom.cells.volume[0]) == approx(0.5)
+        assert np.allclose(geom.cells.centroid[0], [10.0 + 1.0 / 3, 5.0 + 1.0 / 3])
