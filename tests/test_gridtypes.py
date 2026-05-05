@@ -2,13 +2,27 @@ import numpy as np
 import pytest
 from pytest import approx
 
-from raytrax.gridtypes import FaceTopology
+from raytrax.gridtypes import CellTopology, FaceTopology
 
 
 def make_topo(vertex_indices):
     return FaceTopology(
         vertices=np.array(vertex_indices),
         cells=np.zeros(0, dtype=int),
+    )
+
+
+def make_face_geom(vertex_coords, face_vertex_indices):
+    return make_topo(face_vertex_indices).build_geometric(vertex_coords)
+
+
+def make_cell_topo(face_idx, face_sgn):
+    face_idx = np.asarray(face_idx)
+    return CellTopology(
+        face_idx=face_idx,
+        face_sgn=np.asarray(face_sgn),
+        vertices=np.zeros(0, dtype=int),
+        neighbours=np.full_like(face_idx, -1),
     )
 
 
@@ -143,3 +157,134 @@ class TestFaceGeometryErrors:
         coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0], [0.0, 1.0, 0.0]])
         with pytest.raises(NotImplementedError):
             make_topo([0, 1, 2, 3]).build_geometric(coords)
+
+
+class TestCellGeometry2D:
+    def test_unit_square(self):
+        # CCW quad with vertices (0,0),(1,0),(1,1),(0,1)
+        # Edge windings: (0,1),(1,2),(2,3),(3,0); sort parities [0,0,0,1] -> sgn [-1,-1,-1,+1]
+        coords = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
+        face_geom = make_face_geom(coords, [[0, 1], [1, 2], [2, 3], [0, 3]])
+        cell_topo = make_cell_topo(
+            face_idx=[[0, 1, 2, 3]],
+            face_sgn=[[-1, -1, -1, +1]],
+        )
+        cell_geom = cell_topo.build_geometric(face_geom)
+        assert float(cell_geom.volume[0]) == approx(1.0)
+        assert np.allclose(cell_geom.centroid[0], [0.5, 0.5])
+
+    def test_unit_triangle(self):
+        # CCW triangle (0,0),(1,0),(0,1): edges (0,1),(1,2),(2,0)
+        # Sort parities [0,0,1] -> sgn [-1,-1,+1]
+        coords = np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
+        face_geom = make_face_geom(coords, [[0, 1], [1, 2], [0, 2]])
+        cell_topo = make_cell_topo(
+            face_idx=[[0, 1, 2]],
+            face_sgn=[[-1, -1, +1]],
+        )
+        cell_geom = cell_topo.build_geometric(face_geom)
+        assert float(cell_geom.volume[0]) == approx(0.5)
+        assert np.allclose(cell_geom.centroid[0], [1.0 / 3, 1.0 / 3])
+
+    def test_translated_square(self):
+        # Translation invariance: shift by (10, 5)
+        coords = np.array([[10.0, 5.0], [11.0, 5.0], [11.0, 6.0], [10.0, 6.0]])
+        face_geom = make_face_geom(coords, [[0, 1], [1, 2], [2, 3], [0, 3]])
+        cell_topo = make_cell_topo(
+            face_idx=[[0, 1, 2, 3]],
+            face_sgn=[[-1, -1, -1, +1]],
+        )
+        cell_geom = cell_topo.build_geometric(face_geom)
+        assert float(cell_geom.volume[0]) == approx(1.0)
+        assert np.allclose(cell_geom.centroid[0], [10.5, 5.5])
+
+    def test_larger_square(self):
+        # 2x2 square at origin: V=4, C=(1,1)
+        coords = np.array([[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 2.0]])
+        face_geom = make_face_geom(coords, [[0, 1], [1, 2], [2, 3], [0, 3]])
+        cell_topo = make_cell_topo(
+            face_idx=[[0, 1, 2, 3]],
+            face_sgn=[[-1, -1, -1, +1]],
+        )
+        cell_geom = cell_topo.build_geometric(face_geom)
+        assert float(cell_geom.volume[0]) == approx(4.0)
+        assert np.allclose(cell_geom.centroid[0], [1.0, 1.0])
+
+    def test_two_adjacent_squares_share_a_face(self):
+        # Two unit squares side-by-side, sharing edge (1,4)
+        # Cell 0 (left, verts 0,1,4,3): edges (0,1),(1,4),(4,3),(3,0)
+        # Cell 1 (right, verts 1,2,5,4): edges (1,2),(2,5),(5,4),(4,1)
+        coords = np.array([
+            [0.0, 0.0], [1.0, 0.0], [2.0, 0.0],
+            [0.0, 1.0], [1.0, 1.0], [2.0, 1.0],
+        ])
+        # Unique sorted face keys (in deterministic build order)
+        face_keys = [[0, 1], [1, 4], [3, 4], [0, 3], [1, 2], [2, 5], [4, 5]]
+        face_geom = make_face_geom(coords, face_keys)
+        # Cell 0 face indices into face_keys: bottom=0, right=1, top=2, left=3
+        # Cell 0 parities [0,0,1,1] -> sgn [-1,-1,+1,+1]
+        # Cell 1: bottom=4, right=5, top=6, left=1 (shared)
+        # Cell 1 parities [0,0,1,1] -> sgn [-1,-1,+1,+1]
+        cell_topo = make_cell_topo(
+            face_idx=[[0, 1, 2, 3], [4, 5, 6, 1]],
+            face_sgn=[[-1, -1, +1, +1], [-1, -1, +1, +1]],
+        )
+        cell_geom = cell_topo.build_geometric(face_geom)
+        assert np.allclose(cell_geom.volume, [1.0, 1.0])
+        assert np.allclose(cell_geom.centroid[0], [0.5, 0.5])
+        assert np.allclose(cell_geom.centroid[1], [1.5, 0.5])
+
+
+class TestCellGeometry3D:
+    def test_unit_tetrahedron(self):
+        # Vertices (0,0,0),(1,0,0),(0,1,0),(0,0,1)
+        # Face windings: (0,2,1),(0,1,3),(1,2,3),(0,3,2)
+        # Sort parities [1,0,0,1] -> sgn [+1,-1,-1,+1]
+        coords = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ])
+        face_geom = make_face_geom(coords, [[0, 1, 2], [0, 1, 3], [1, 2, 3], [0, 2, 3]])
+        cell_topo = make_cell_topo(
+            face_idx=[[0, 1, 2, 3]],
+            face_sgn=[[+1, -1, -1, +1]],
+        )
+        cell_geom = cell_topo.build_geometric(face_geom)
+        assert float(cell_geom.volume[0]) == approx(1.0 / 6)
+        assert np.allclose(cell_geom.centroid[0], [0.25, 0.25, 0.25])
+
+    def test_translated_tetrahedron(self):
+        # Translation invariance: shift unit tet by (1, 2, 3)
+        coords = np.array([
+            [1.0, 2.0, 3.0],
+            [2.0, 2.0, 3.0],
+            [1.0, 3.0, 3.0],
+            [1.0, 2.0, 4.0],
+        ])
+        face_geom = make_face_geom(coords, [[0, 1, 2], [0, 1, 3], [1, 2, 3], [0, 2, 3]])
+        cell_topo = make_cell_topo(
+            face_idx=[[0, 1, 2, 3]],
+            face_sgn=[[+1, -1, -1, +1]],
+        )
+        cell_geom = cell_topo.build_geometric(face_geom)
+        assert float(cell_geom.volume[0]) == approx(1.0 / 6)
+        assert np.allclose(cell_geom.centroid[0], [1.25, 2.25, 3.25])
+
+    def test_larger_tetrahedron(self):
+        # Scale unit tet by 2: V scales by 2^3 = 8, so V = 8/6 = 4/3
+        coords = np.array([
+            [0.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            [0.0, 0.0, 2.0],
+        ])
+        face_geom = make_face_geom(coords, [[0, 1, 2], [0, 1, 3], [1, 2, 3], [0, 2, 3]])
+        cell_topo = make_cell_topo(
+            face_idx=[[0, 1, 2, 3]],
+            face_sgn=[[+1, -1, -1, +1]],
+        )
+        cell_geom = cell_topo.build_geometric(face_geom)
+        assert float(cell_geom.volume[0]) == approx(4.0 / 3)
+        assert np.allclose(cell_geom.centroid[0], [0.5, 0.5, 0.5])
