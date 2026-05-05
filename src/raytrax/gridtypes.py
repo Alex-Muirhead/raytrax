@@ -51,9 +51,9 @@ class Face(eqx.Module):
 
 
 class CellTopology(eqx.Module):
-    face_idx: Array   # (n_cells, n_faces_per_cell) face indices into FaceTopology
-    face_sgn: Array   # (n_cells, n_faces_per_cell) +/-1; -1 = canonical normal is outward, +1 = inward
-    vertices: Array   # > For random sampling
+    face_ids: Array  # (n_cells, n_faces_per_cell) face indices into FaceTopology
+    face_signs: Array  # (n_cells, n_faces_per_cell) +/-1; -1 = canonical normal is outward, +1 = inward
+    vertices: Array  # > For random sampling
     neighbours: Array  # > Index of neighbouring cells (-1 = boundary)
 
     def build_geometric(self, face_geom: FaceGeometry) -> CellGeometry:
@@ -65,10 +65,10 @@ class CellTopology(eqx.Module):
         # A_f^true = 2/(d-1) * area_stored  (corrects for the /2 in build_geometric)
         # => V = (2/(d*(d-1))) * sum(outward_offset * area_stored)
         # => C = (2/((d-1)*(d+1))) * sum(outward_offset * face_centroid * area_stored) / V
-        canonical_offsets = face_geom.offset[self.face_idx]     # (n_cells, n_faces)
-        face_areas = face_geom.area[self.face_idx]               # (n_cells, n_faces)
-        face_centroids = face_geom.centroid[self.face_idx]       # (n_cells, n_faces, ndim)
-        outward_offsets = -self.face_sgn * canonical_offsets     # (n_cells, n_faces)
+        canonical_offsets = face_geom.offset[self.face_ids]  # (n_cells, n_faces)
+        face_areas = face_geom.area[self.face_ids]  # (n_cells, n_faces)
+        face_centroids = face_geom.centroid[self.face_ids]  # (n_cells, n_faces, ndim)
+        outward_offsets = -self.face_signs * canonical_offsets  # (n_cells, n_faces)
 
         volume = (2 / (ndim * (ndim - 1))) * (outward_offsets * face_areas).sum(axis=-1)
 
