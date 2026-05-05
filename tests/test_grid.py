@@ -93,15 +93,72 @@ class TestSortWithParityBit:
         assert np.array_equal(sorted_arr, np.array([[1, 2, 3], [1, 2, 3]]))
         assert np.array_equal(parity, np.array([0, 1]))
 
+    # --- length-4 ---
+
+    @pytest.mark.parametrize(
+        "perm, expected_parity",
+        [
+            ([1, 2, 3, 4], 0),  # identity
+            ([1, 2, 4, 3], 1),
+            ([1, 3, 2, 4], 1),
+            ([1, 3, 4, 2], 0),
+            ([1, 4, 2, 3], 0),
+            ([1, 4, 3, 2], 1),
+            ([2, 1, 3, 4], 1),
+            ([2, 1, 4, 3], 0),
+            ([2, 3, 1, 4], 0),
+            ([2, 3, 4, 1], 1),
+            ([2, 4, 1, 3], 1),
+            ([2, 4, 3, 1], 0),
+            ([3, 1, 2, 4], 0),
+            ([3, 1, 4, 2], 1),
+            ([3, 2, 1, 4], 1),
+            ([3, 2, 4, 1], 0),
+            ([3, 4, 1, 2], 0),
+            ([3, 4, 2, 1], 1),
+            ([4, 1, 2, 3], 1),
+            ([4, 1, 3, 2], 0),
+            ([4, 2, 1, 3], 0),
+            ([4, 2, 3, 1], 1),
+            ([4, 3, 1, 2], 1),
+            ([4, 3, 2, 1], 0),
+        ],
+    )
+    def test_all_permutations_of_four(self, perm, expected_parity):
+        arr = np.array(perm)
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
+        assert np.array_equal(sorted_arr, np.array([1, 2, 3, 4]))
+        assert int(parity) == expected_parity
+
+    def test_equal_elements_four(self):
+        arr = np.array([3, 1, 3, 1])
+        sorted_arr, _ = sort_with_parity_bit(arr, axis=0)
+        assert np.array_equal(sorted_arr, np.array([1, 1, 3, 3]))
+
+    def test_all_equal_elements_four(self):
+        arr = np.array([7, 7, 7, 7])
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
+        assert np.array_equal(sorted_arr, np.array([7, 7, 7, 7]))
+        assert int(parity) == 0
+
+    def test_batched_four_axis1(self):
+        # Shape (N, 4): each row is an independent quadruple to sort.
+        # Row 0: (4,3,2,1) -> [1,2,3,4], parity 0
+        # Row 1: (1,4,3,2) -> [1,2,3,4], parity 1
+        arr = np.array([[4, 3, 2, 1], [1, 4, 3, 2]])
+        sorted_arr, parity = sort_with_parity_bit(arr, axis=1)
+        assert np.array_equal(sorted_arr, np.array([[1, 2, 3, 4], [1, 2, 3, 4]]))
+        assert np.array_equal(parity, np.array([0, 1]))
+
     def test_parity_is_binary(self):
-        for perm in [[1, 2], [2, 1], [1, 2, 3], [3, 2, 1], [2, 1, 3]]:
+        for perm in [[1, 2], [2, 1], [1, 2, 3], [3, 2, 1], [2, 1, 3], [4, 3, 2, 1], [1, 4, 3, 2]]:
             _, parity = sort_with_parity_bit(np.array(perm), axis=0)
             assert int(parity) in (0, 1)
 
     # --- error cases ---
 
     def test_raises_for_unsupported_length(self):
-        arr = np.array([1, 2, 3, 4])
+        arr = np.array([1, 2, 3, 4, 5])
         with pytest.raises(NotImplementedError):
             sort_with_parity_bit(arr, axis=0)
 

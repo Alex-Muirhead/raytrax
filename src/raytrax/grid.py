@@ -62,7 +62,7 @@ FACE_DEFINITIONS: dict[str, list[tuple[int, ...]]] = {
 
 
 def sort_with_parity_bit(arr, *, axis: int = -2):
-    """Sorting for 2 and 3 elements, returns (sorted, parity)."""
+    """Sorting for 2, 3 and 4 elements, returns (sorted, parity)."""
     swaps = 0
 
     def cmp_swap(x, y, s):
@@ -86,8 +86,21 @@ def sort_with_parity_bit(arr, *, axis: int = -2):
 
             sorted_arr = np.stack([a, b, c], axis=axis)
 
+        case 4:
+            # Bose-Nelson 5-comparator sorting network:
+            # (a,b)(c,d) -> (a,c)(b,d) -> (b,c)
+            a, b, c, d = np.unstack(arr, axis=axis)
+
+            a, b, swaps = cmp_swap(a, b, swaps)
+            c, d, swaps = cmp_swap(c, d, swaps)
+            a, c, swaps = cmp_swap(a, c, swaps)
+            b, d, swaps = cmp_swap(b, d, swaps)
+            b, c, swaps = cmp_swap(b, c, swaps)
+
+            sorted_arr = np.stack([a, b, c, d], axis=axis)
+
         case _:
-            raise NotImplementedError("Sorting only implemented for lengths 2 and 3")
+            raise NotImplementedError("Sorting only implemented for lengths 2, 3, and 4")
 
     parity_bit = swaps % 2
     return sorted_arr, parity_bit
