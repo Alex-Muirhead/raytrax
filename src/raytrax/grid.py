@@ -136,15 +136,20 @@ def lex_unique(
     return ret
 
 
-def process_cell_block(cell_block, *, debug: bool = False) -> tuple[CellTopology, FaceTopology]:
-    """TODO."""
+def process_cell_block(cell_block) -> MeshTopology:
+    """Build a `MeshTopology` from a meshio `CellBlock`.
+
+    Supports cell types where every face has the same number of vertices:
+    triangles, quads, tetrahedra, and hexahedra. Boundary faces use a
+    sentinel of -1 for the missing adjacent cell.
+    """
     cell_face_structure = FACE_DEFINITIONS[cell_block.type]
 
     num_cells = len(cell_block)
     num_faces_per_cell = len(cell_face_structure)
     num_verts_per_face, *other = set(len(ids) for ids in cell_face_structure)
     if other:
-        raise ValueError("Cannot handle meshes with variable faces per cell")
+        raise ValueError("Cannot handle meshes with variable vertices per face")
 
     # Prefixes!
     #  - `cell_` has first axis indexing cell
@@ -157,14 +162,12 @@ def process_cell_block(cell_block, *, debug: bool = False) -> tuple[CellTopology
 
     # --- Step 1. Discover the faces ---
 
-    _cell_face_keys, cell_face_paritybit = sort_with_parity_bit(cell_face_vertices, axis=2)
+    cell_face_keys, cell_face_parity = sort_with_parity_bit(cell_face_vertices, axis=2)
 
     # Find the unique faces (efficiently)
-    _all_face_keys = _cell_face_keys.reshape((-1, num_verts_per_face))
-    face_keys, all_face_ids, face_counts = lex_unique(_all_face_keys, return_inverse=True)
-
-    if debug:
-        assert np.max(face_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
+    all_face_keys = cell_face_keys.reshape((-1, num_verts_per_face))
+    face_keys, all_face_ids, face_counts = lex_unique(all_face_keys, return_inverse=True, return_counts=True)
+    assert np.max(face_counts) <= 2, "Invalid mesh: Faces appear connected to more than 2 cells"
 
     cell_face_ids = all_face_ids.reshape((num_cells, num_faces_per_cell))
 
@@ -176,21 +179,19 @@ def process_cell_block(cell_block, *, debug: bool = False) -> tuple[CellTopology
     # WARN: We are using a sentinal value of -1 here!
     num_faces, _ = face_keys.shape
     face_cell_ids = np.full((num_faces, 2), fill_value=-1, dtype=int)
-    face_cell_ids[cell_face_ids, cell_face_paritybit] = cell_ids
+    face_cell_ids[cell_face_ids, cell_face_parity] = cell_ids
+    assert np.all(face_cell_ids[cell_face_ids, cell_face_parity] == cell_ids), "Indexing is messed up"
 
     face_topology = FaceTopology(vertices=face_keys, cells=face_cell_ids)
 
-    if debug:
-        assert np.all(face_cell_ids[cell_face_ids, cell_face_paritybit] == cell_ids), "Indexing is messed up"
-
     # Now we reconstruct adjacency!
     # WARN: We are using a sentinal value of -1 here!
-    cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_paritybit]
-    cell_face_paritysign = np.where(cell_face_paritybit == 0, -1, +1)
+    cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_parity]
+    cell_face_signs = np.where(cell_face_parity == 0, -1, +1)
 
     cell_topology = CellTopology(
-        face_idx=cell_face_ids,
-        face_sgn=cell_face_paritysign,
+        face_ids=cell_face_ids,
+        face_signs=cell_face_signs,
         vertices=cell_vertices,
         neighbours=cell_to_cell,
     )
