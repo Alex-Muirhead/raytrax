@@ -19,20 +19,21 @@ class FaceTopology(eqx.Module):
             case 2:
                 ref, u = np.unstack(face_coords, axis=vertex_axis)
                 u = u - ref
+                # equal to -Iu, where I is pseudoscalar
                 normal = u @ np.array([[0, -1], [+1, 0]])
             case 3:
                 ref, u, v = np.unstack(face_coords, axis=vertex_axis)
                 u = u - ref
                 v = v - ref
-                normal = np.cross(u, v)
+                # equal to -I(u^v) / 2, where I is pseudoscalar
+                normal = np.cross(u, v) / 2
             case _:
                 raise NotImplementedError("Only 1- and 2-simplex faces are supported")
 
-        centroid = face_coords.mean(axis=vertex_axis)
-        normal_mag = np.linalg.vector_norm(normal, axis=coord_axis)
-        normal /= normal_mag[..., None]
+        centroid = face_coords.mean(axis=vertex_axis)  # Only true for simplices
+        area = np.linalg.vector_norm(normal, axis=coord_axis)
+        normal /= area[..., None]
         offset = (ref * normal).sum(axis=coord_axis)
-        area = normal_mag / 2
         return FaceGeometry(centroid=centroid, area=area, normal=normal, offset=offset)
 
 
@@ -57,23 +58,25 @@ class CellTopology(eqx.Module):
     neighbours: Array  # > Index of neighbouring cells (-1 = boundary)
 
     def build_geometric(self, face_geom: FaceGeometry) -> CellGeometry:
-        ndim = face_geom.centroid.shape[-1]
+        vector_vertex_axis, vector_coord_axis = -2, -1
+        scalar_vertex_axis = -1
+        ndim = face_geom.centroid.shape[vector_coord_axis]
+
+        # Until we have nice indexing on our PyTrees
+        faces: FaceGeometry = jax.tree.map(lambda leaf: leaf[self.face_ids], face_geom)
 
         # Volume and centroid via divergence theorem.
         # For a convex cell: d*V = sum_f (outward_offset_f * A_f^true)
         # outward_offset = -face_sgn * canonical_offset  (face_sgn=-1 means outward)
-        # A_f^true = 2/(d-1) * area_stored  (corrects for the /2 in build_geometric)
-        # => V = (2/(d*(d-1))) * sum(outward_offset * area_stored)
-        # => C = (2/((d-1)*(d+1))) * sum(outward_offset * face_centroid * area_stored) / V
-        canonical_offsets = face_geom.offset[self.face_ids]  # (n_cells, n_faces)
-        face_areas = face_geom.area[self.face_ids]  # (n_cells, n_faces)
-        face_centroids = face_geom.centroid[self.face_ids]  # (n_cells, n_faces, ndim)
-        outward_offsets = -self.face_signs * canonical_offsets  # (n_cells, n_faces)
+        # A_f^true = 1/(d-1) * area_stored
+        # => V = (1/d) * sum(outward_offset * area_stored)
+        # => C = (1/(d+1)) * sum(outward_offset * face_centroid * area_stored) / V
 
-        volume = (2 / (ndim * (ndim - 1))) * (outward_offsets * face_areas).sum(axis=-1)
+        volume_contributions = -self.face_signs * faces.offset * faces.area
+        centroid_contributions = faces.centroid * volume_contributions[..., None]
 
-        centroid_num = (outward_offsets[..., None] * face_centroids * face_areas[..., None]).sum(axis=-2)
-        centroid = (2 / ((ndim - 1) * (ndim + 1))) * centroid_num / volume[..., None]
+        volume = (1 / ndim) * volume_contributions.sum(axis=scalar_vertex_axis)
+        centroid = (1 / (ndim + 1)) * centroid_contributions.sum(axis=vector_vertex_axis) / volume[..., None]
 
         return CellGeometry(volume=volume, centroid=centroid)
 

@@ -19,13 +19,13 @@ class TestSortWithParityBit:
     def test_all_permutations_of_two(self, perm, expected_parity):
         arr = np.array(perm)
         sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([1, 2]))
+        np.testing.assert_equal(sorted_arr, np.array([1, 2]))
         assert int(parity) == expected_parity
 
     def test_equal_elements_two(self):
         arr = np.array([3, 3])
         sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([3, 3]))
+        np.testing.assert_equal(sorted_arr, np.array([3, 3]))
         assert int(parity) == 0
 
     def test_batched_two_axis0(self):
@@ -34,8 +34,8 @@ class TestSortWithParityBit:
         # Column 1: (1, 2) -> [1, 2], parity 0
         arr = np.array([[2, 1], [1, 2]])
         sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([[1, 1], [2, 2]]))
-        assert np.array_equal(parity, np.array([1, 0]))
+        np.testing.assert_equal(sorted_arr, np.array([[1, 1], [2, 2]]))
+        np.testing.assert_equal(parity, np.array([1, 0]))
 
     def test_batched_two_axis1(self):
         # Shape (N, 2): each row is an independent pair to sort.
@@ -43,8 +43,8 @@ class TestSortWithParityBit:
         # Row 1: (1, 2) -> [1, 2], parity 0
         arr = np.array([[2, 1], [1, 2]])
         sorted_arr, parity = sort_with_parity_bit(arr, axis=1)
-        assert np.array_equal(sorted_arr, np.array([[1, 2], [1, 2]]))
-        assert np.array_equal(parity, np.array([1, 0]))
+        np.testing.assert_equal(sorted_arr, np.array([[1, 2], [1, 2]]))
+        np.testing.assert_equal(parity, np.array([1, 0]))
 
     # --- length-3 ---
 
@@ -62,18 +62,18 @@ class TestSortWithParityBit:
     def test_all_permutations_of_three(self, perm, expected_parity):
         arr = np.array(perm)
         sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([1, 2, 3]))
+        np.testing.assert_equal(sorted_arr, np.array([1, 2, 3]))
         assert int(parity) == expected_parity
 
     def test_equal_adjacent_elements(self):
         arr = np.array([2, 2, 1])
         sorted_arr, _ = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([1, 2, 2]))
+        np.testing.assert_equal(sorted_arr, np.array([1, 2, 2]))
 
     def test_all_equal_elements(self):
         arr = np.array([5, 5, 5])
         sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([5, 5, 5]))
+        np.testing.assert_equal(sorted_arr, np.array([5, 5, 5]))
         assert int(parity) == 0
 
     def test_batched_axis0(self):
@@ -83,8 +83,8 @@ class TestSortWithParityBit:
         # Column 2: (2, 3, 1) -> [1,2,3], parity 0
         arr = np.array([[3, 1, 2], [1, 2, 3], [2, 3, 1]])
         sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([[1, 1, 1], [2, 2, 2], [3, 3, 3]]))
-        assert np.array_equal(parity, np.array([0, 0, 0]))
+        np.testing.assert_equal(sorted_arr, np.array([[1, 1, 1], [2, 2, 2], [3, 3, 3]]))
+        np.testing.assert_equal(parity, np.array([0, 0, 0]))
 
     def test_batched_axis1(self):
         # Shape (N, 3): each row is an independent triplet to sort.
@@ -92,8 +92,8 @@ class TestSortWithParityBit:
         # Row 1: (1, 3, 2) -> [1,2,3], parity 1
         arr = np.array([[3, 1, 2], [1, 3, 2]])
         sorted_arr, parity = sort_with_parity_bit(arr, axis=1)
-        assert np.array_equal(sorted_arr, np.array([[1, 2, 3], [1, 2, 3]]))
-        assert np.array_equal(parity, np.array([0, 1]))
+        np.testing.assert_equal(sorted_arr, np.array([[1, 2, 3], [1, 2, 3]]))
+        np.testing.assert_equal(parity, np.array([0, 1]))
 
     # --- length-4 ---
 
@@ -129,18 +129,18 @@ class TestSortWithParityBit:
     def test_all_permutations_of_four(self, perm, expected_parity):
         arr = np.array(perm)
         sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([1, 2, 3, 4]))
+        np.testing.assert_equal(sorted_arr, np.array([1, 2, 3, 4]))
         assert int(parity) == expected_parity
 
     def test_equal_elements_four(self):
         arr = np.array([3, 1, 3, 1])
         sorted_arr, _ = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([1, 1, 3, 3]))
+        np.testing.assert_equal(sorted_arr, np.array([1, 1, 3, 3]))
 
     def test_all_equal_elements_four(self):
         arr = np.array([7, 7, 7, 7])
         sorted_arr, parity = sort_with_parity_bit(arr, axis=0)
-        assert np.array_equal(sorted_arr, np.array([7, 7, 7, 7]))
+        np.testing.assert_equal(sorted_arr, np.array([7, 7, 7, 7]))
         assert int(parity) == 0
 
     def test_batched_four_axis1(self):
@@ -149,8 +149,8 @@ class TestSortWithParityBit:
         # Row 1: (1,4,3,2) -> [1,2,3,4], parity 1
         arr = np.array([[4, 3, 2, 1], [1, 4, 3, 2]])
         sorted_arr, parity = sort_with_parity_bit(arr, axis=1)
-        assert np.array_equal(sorted_arr, np.array([[1, 2, 3, 4], [1, 2, 3, 4]]))
-        assert np.array_equal(parity, np.array([0, 1]))
+        np.testing.assert_equal(sorted_arr, np.array([[1, 2, 3, 4], [1, 2, 3, 4]]))
+        np.testing.assert_equal(parity, np.array([0, 1]))
 
     def test_parity_is_binary(self):
         for perm in [[1, 2], [2, 1], [1, 2, 3], [3, 2, 1], [2, 1, 3], [4, 3, 2, 1], [1, 4, 3, 2]]:
@@ -181,17 +181,17 @@ class TestLexUnique:
     def test_all_duplicates(self):
         keys = np.array([[7, 8], [7, 8], [7, 8]])
         (unique,) = lex_unique(keys)
-        assert np.array_equal(unique, np.array([[7, 8]]))
+        np.testing.assert_equal(unique, np.array([[7, 8]]))
 
     def test_return_index_points_to_first_occurrence(self):
         keys = np.array([[3, 4], [1, 2], [1, 2], [3, 4]])
         unique, idx = lex_unique(keys, return_index=True)
-        assert np.array_equal(keys[idx], unique)
+        np.testing.assert_equal(keys[idx], unique)
 
     def test_return_inverse_reconstructs_input(self):
         keys = np.array([[1, 2], [3, 4], [1, 2], [5, 6], [3, 4]])
         unique, inv = lex_unique(keys, return_inverse=True)
-        assert np.array_equal(unique[inv], keys)
+        np.testing.assert_equal(unique[inv], keys)
 
     def test_return_counts_sum_to_input_length(self):
         keys = np.array([[1, 2], [3, 4], [1, 2], [1, 2], [3, 4]])
@@ -210,8 +210,8 @@ class TestLexUnique:
     def test_all_return_flags_consistent(self):
         keys = np.array([[1, 2], [3, 4], [1, 2], [5, 6]])
         unique, idx, inv, counts = lex_unique(keys, return_index=True, return_inverse=True, return_counts=True)
-        assert np.array_equal(keys[idx], unique)
-        assert np.array_equal(unique[inv], keys)
+        np.testing.assert_equal(keys[idx], unique)
+        np.testing.assert_equal(unique[inv], keys)
         assert np.sum(counts) == len(keys)
         assert len(counts) == len(unique)
 
@@ -226,13 +226,13 @@ class TestLexUnique:
     def test_single_column_keys(self):
         keys = np.array([[3], [1], [1], [2]])
         unique, inv = lex_unique(keys, return_inverse=True)
-        assert np.array_equal(unique[inv], keys)
+        np.testing.assert_equal(unique[inv], keys)
         assert unique.shape == (3, 1)
 
     def test_single_row_input(self):
         keys = np.array([[4, 5]])
         (unique,) = lex_unique(keys)
-        assert np.array_equal(unique, np.array([[4, 5]]))
+        np.testing.assert_equal(unique, np.array([[4, 5]]))
 
 
 def _rows_equal_as_sets(a: np.ndarray, b: np.ndarray) -> bool:
@@ -363,12 +363,14 @@ class TestProcessCellBlockGeometry:
         assert np.allclose(geom.cells.centroid[0], [0.5, 0.5])
 
     def test_unit_tetrahedron(self):
-        points = np.array([
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ])
+        points = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
         block = _make_cell_block("tetra", [[0, 1, 2, 3]])
         geom = process_cell_block(block).build_geometric(points)
 
@@ -389,13 +391,15 @@ class TestProcessCellBlockGeometry:
 
     def test_two_tetrahedra(self):
         # Tet 0 (corner at origin) + tet 1 (apex at (1,1,1))
-        points = np.array([
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [1.0, 1.0, 1.0],
-        ])
+        points = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [1.0, 1.0, 1.0],
+            ]
+        )
         block = _make_cell_block("tetra", [[0, 1, 2, 3], [4, 1, 3, 2]])
         geom = process_cell_block(block).build_geometric(points)
 
@@ -410,6 +414,7 @@ class TestProcessCellBlockGeometry:
         # Translation invariance: shift unit triangle by (10, 5)
         points = np.array([[10.0, 5.0], [11.0, 5.0], [10.0, 6.0]])
         block = _make_cell_block("triangle", [[0, 1, 2]])
+        print(block)
         geom = process_cell_block(block).build_geometric(points)
 
         assert float(geom.cells.volume[0]) == approx(0.5)
