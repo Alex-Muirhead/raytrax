@@ -53,7 +53,7 @@ class Face(eqx.Module):
 
 class CellTopology(eqx.Module):
     face_ids: Array  # (n_cells, n_faces_per_cell) face indices into FaceTopology
-    face_signs: Array  # (n_cells, n_faces_per_cell) +/-1; -1 = canonical normal is outward, +1 = inward
+    face_signs: Array  # (n_cells, n_faces_per_cell) +/-1; +1 = canonical normal is outward, -1 = inward
     vertices: Array  # > For random sampling
     neighbours: Array  # > Index of neighbouring cells (-1 = boundary)
 
@@ -72,7 +72,7 @@ class CellTopology(eqx.Module):
         # => V = (1/d) * sum(outward_offset * area_stored)
         # => C = (1/(d+1)) * sum(outward_offset * face_centroid * area_stored) / V
 
-        volume_contributions = -self.face_signs * faces.offset * faces.area
+        volume_contributions = self.face_signs * faces.offset * faces.area
         centroid_contributions = faces.centroid * volume_contributions[..., None]
 
         volume = (1 / ndim) * volume_contributions.sum(axis=scalar_vertex_axis)

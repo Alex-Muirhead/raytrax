@@ -200,7 +200,7 @@ def process_cell_block(cell_block) -> MeshTopology:
     # Now we reconstruct adjacency!
     # WARN: We are using a sentinal value of -1 here!
     cell_to_cell = face_cell_ids[cell_face_ids, 1 - cell_face_parity]
-    cell_face_signs = np.where(cell_face_parity == 0, -1, +1)
+    cell_face_signs = np.where(cell_face_parity == 0, +1, -1)
 
     cell_topology = CellTopology(
         face_ids=cell_face_ids,

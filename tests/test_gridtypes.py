@@ -171,7 +171,7 @@ class TestCellGeometry2D:
         face_geom = make_face_geom(coords, [[0, 1], [1, 2], [2, 3], [0, 3]])
         cell_topo = make_cell_topo(
             face_ids=[[0, 1, 2, 3]],
-            face_signs=[[-1, -1, -1, +1]],
+            face_signs=[[+1, +1, +1, -1]],
         )
         cell_geom = cell_topo.build_geometric(face_geom)
         assert float(cell_geom.volume[0]) == approx(1.0)
@@ -184,7 +184,7 @@ class TestCellGeometry2D:
         face_geom = make_face_geom(coords, [[0, 1], [1, 2], [0, 2]])
         cell_topo = make_cell_topo(
             face_ids=[[0, 1, 2]],
-            face_signs=[[-1, -1, +1]],
+            face_signs=[[+1, +1, -1]],
         )
         cell_geom = cell_topo.build_geometric(face_geom)
         assert float(cell_geom.volume[0]) == approx(0.5)
@@ -196,7 +196,7 @@ class TestCellGeometry2D:
         face_geom = make_face_geom(coords, [[0, 1], [1, 2], [2, 3], [0, 3]])
         cell_topo = make_cell_topo(
             face_ids=[[0, 1, 2, 3]],
-            face_signs=[[-1, -1, -1, +1]],
+            face_signs=[[+1, +1, +1, -1]],
         )
         cell_geom = cell_topo.build_geometric(face_geom)
         assert float(cell_geom.volume[0]) == approx(1.0)
@@ -208,7 +208,7 @@ class TestCellGeometry2D:
         face_geom = make_face_geom(coords, [[0, 1], [1, 2], [2, 3], [0, 3]])
         cell_topo = make_cell_topo(
             face_ids=[[0, 1, 2, 3]],
-            face_signs=[[-1, -1, -1, +1]],
+            face_signs=[[+1, +1, +1, -1]],
         )
         cell_geom = cell_topo.build_geometric(face_geom)
         assert float(cell_geom.volume[0]) == approx(4.0)
@@ -232,12 +232,12 @@ class TestCellGeometry2D:
         face_keys = [[0, 1], [1, 4], [3, 4], [0, 3], [1, 2], [2, 5], [4, 5]]
         face_geom = make_face_geom(coords, face_keys)
         # Cell 0 face indices into face_keys: bottom=0, right=1, top=2, left=3
-        # Cell 0 parities [0,0,1,1] -> sgn [-1,-1,+1,+1]
+        # Cell 0 parities [0,0,1,1] -> sgn [+1,+1,-1,-1]
         # Cell 1: bottom=4, right=5, top=6, left=1 (shared)
-        # Cell 1 parities [0,0,1,1] -> sgn [-1,-1,+1,+1]
+        # Cell 1 parities [0,0,1,1] -> sgn [+1,+1,-1,-1]
         cell_topo = make_cell_topo(
             face_ids=[[0, 1, 2, 3], [4, 5, 6, 1]],
-            face_signs=[[-1, -1, +1, +1], [-1, -1, +1, +1]],
+            face_signs=[[+1, +1, -1, -1], [+1, +1, -1, -1]],
         )
         cell_geom = cell_topo.build_geometric(face_geom)
         np.testing.assert_equal(cell_geom.volume, [1.0, 1.0])
@@ -261,7 +261,7 @@ class TestCellGeometry3D:
         face_geom = make_face_geom(coords, [[0, 1, 2], [0, 1, 3], [1, 2, 3], [0, 2, 3]])
         cell_topo = make_cell_topo(
             face_ids=[[0, 1, 2, 3]],
-            face_signs=[[+1, -1, -1, +1]],
+            face_signs=[[-1, +1, +1, -1]],
         )
         cell_geom = cell_topo.build_geometric(face_geom)
         assert float(cell_geom.volume[0]) == approx(1.0 / 6)
@@ -280,7 +280,7 @@ class TestCellGeometry3D:
         face_geom = make_face_geom(coords, [[0, 1, 2], [0, 1, 3], [1, 2, 3], [0, 2, 3]])
         cell_topo = make_cell_topo(
             face_ids=[[0, 1, 2, 3]],
-            face_signs=[[+1, -1, -1, +1]],
+            face_signs=[[-1, +1, +1, -1]],
         )
         cell_geom = cell_topo.build_geometric(face_geom)
         assert float(cell_geom.volume[0]) == approx(1.0 / 6)
@@ -299,7 +299,7 @@ class TestCellGeometry3D:
         face_geom = make_face_geom(coords, [[0, 1, 2], [0, 1, 3], [1, 2, 3], [0, 2, 3]])
         cell_topo = make_cell_topo(
             face_ids=[[0, 1, 2, 3]],
-            face_signs=[[+1, -1, -1, +1]],
+            face_signs=[[-1, +1, +1, -1]],
         )
         cell_geom = cell_topo.build_geometric(face_geom)
         assert float(cell_geom.volume[0]) == approx(4.0 / 3)
