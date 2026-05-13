@@ -1,3 +1,5 @@
+from typing import Self
+
 import equinox as eqx
 import jax
 import numpy as np
@@ -5,7 +7,12 @@ import numpy as np
 Array = jax.Array | np.typing.NDArray
 
 
-class FaceTopology(eqx.Module):
+class IndexingMixin:
+    def __getitem__(self, idx) -> Self:
+        return jax.tree.map(lambda leaf: leaf[idx], self)
+
+
+class FaceTopology(eqx.Module, IndexingMixin):
     """Topological (index) information about face/s."""
 
     vertices: Array
@@ -37,7 +44,7 @@ class FaceTopology(eqx.Module):
         return FaceGeometry(centroid=centroid, area=area, normal=normal, offset=offset)
 
 
-class FaceGeometry(eqx.Module):
+class FaceGeometry(eqx.Module, IndexingMixin):
     """Numerical values of geometric properties of each face."""
 
     centroid: Array
@@ -46,12 +53,12 @@ class FaceGeometry(eqx.Module):
     offset: Array
 
 
-class Face(eqx.Module):
+class Face(eqx.Module, IndexingMixin):
     geometry: FaceGeometry
     topology: FaceTopology
 
 
-class CellTopology(eqx.Module):
+class CellTopology(eqx.Module, IndexingMixin):
     face_ids: Array  # (n_cells, n_faces_per_cell) face indices into FaceTopology
     face_signs: Array  # (n_cells, n_faces_per_cell) +/-1; +1 = canonical normal is outward, -1 = inward
     vertices: Array  # > For random sampling
@@ -67,28 +74,40 @@ class CellTopology(eqx.Module):
 
         # Volume and centroid via divergence theorem.
         # For a convex cell: d*V = sum_f (outward_offset_f * A_f^true)
-        # outward_offset = -face_sgn * canonical_offset  (face_sgn=-1 means outward)
-        # A_f^true = 1/(d-1) * area_stored
         # => V = (1/d) * sum(outward_offset * area_stored)
         # => C = (1/(d+1)) * sum(outward_offset * face_centroid * area_stored) / V
 
         volume_contributions = self.face_signs * faces.offset * faces.area
         centroid_contributions = faces.centroid * volume_contributions[..., None]
 
+        # NOTE: These are *not* averages! They are based on divergence theorem
         volume = (1 / ndim) * volume_contributions.sum(axis=scalar_vertex_axis)
         centroid = (1 / (ndim + 1)) * centroid_contributions.sum(axis=vector_vertex_axis) / volume[..., None]
 
-        return CellGeometry(volume=volume, centroid=centroid)
+        # Distance from face to centroid?
+        # Broadcast (num_cells, num_dims) -> (num_cells, num_faces, num_dims)
+        local_offset = ((faces.centroid - centroid[..., None, :]) * faces.normal).sum(axis=vector_coord_axis)
+        face_weights = (1 / ndim) * self.face_signs * local_offset * faces.area
+        # Normalise
+        face_weights /= volume[..., None]
+
+        return CellGeometry(volume=volume, centroid=centroid, face_weights=face_weights)
 
 
-class CellGeometry(eqx.Module):
+class CellGeometry(eqx.Module, IndexingMixin):
     """Numerical values of geometric properties of each cell."""
 
     volume: Array  #   > Volume of cell
     centroid: Array  # > Coordinate
+    face_weights: Array  # (n_cells, n_faces_per_cell)
 
 
-class MeshTopology(eqx.Module):
+class Cell(eqx.Module, IndexingMixin):
+    geometry: CellGeometry
+    topology: CellTopology
+
+
+class MeshTopology(eqx.Module, IndexingMixin):
     """Topological information of the mesh. Stored as indices."""
 
     faces: FaceTopology
@@ -100,8 +119,27 @@ class MeshTopology(eqx.Module):
         return MeshGeometry(faces=face_geom, cells=cell_geom)
 
 
-class MeshGeometry(eqx.Module):
+class MeshGeometry(eqx.Module, IndexingMixin):
     """Geometric properties of the mesh. Stored as values."""
 
     faces: FaceGeometry
     cells: CellGeometry
+
+
+class Mesh(eqx.Module, IndexingMixin):
+    geometry: MeshGeometry
+    topology: MeshTopology
+
+    @property
+    def faces(self) -> Face:
+        return Face(
+            geometry=self.geometry.faces,
+            topology=self.topology.faces,
+        )
+
+    @property
+    def cells(self) -> Face:
+        return Cell(
+            geometry=self.geometry.cells,
+            topology=self.topology.cells,
+        )

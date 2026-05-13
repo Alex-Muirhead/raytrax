@@ -24,8 +24,8 @@ def create_plane_mesh(
 
     gmsh.model.addPhysicalGroup(dim=2, tags=[face_tag], name="plane")
 
-    gmsh.option.set_number("Mesh.Algorithm", 11)
-    gmsh.option.set_number("Mesh.MeshSizeMin", width / 2)
+    # gmsh.option.set_number("Mesh.Algorithm", 11)
+    # gmsh.option.set_number("Mesh.MeshSizeMin", width / 2)
 
     gmsh.model.mesh.generate(dim=2)
 
