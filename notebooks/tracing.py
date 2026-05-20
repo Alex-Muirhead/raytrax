@@ -14,10 +14,11 @@ with app.setup:
     import matplotlib.pyplot as plt
     import meshio
     import numpy as np
+    from matplotlib.collections import LineCollection, PolyCollection
 
     from raytrax.intersections import LinearRay, ConvexCell, crossing
     from raytrax.grid import process_cell_block
-    from raytrax.gridtypes import Mesh
+    from raytrax.gridtypes import Mesh, Cell, Face
 
 
 @app.function
@@ -113,8 +114,8 @@ def _(mesh):
 
 @app.cell
 def _(num_cells):
-    new_cell_datacell_data = jnp.zeros(num_cells)
-    return
+    cell_data = jnp.zeros(num_cells)
+    return (cell_data,)
 
 
 @app.cell
@@ -130,19 +131,42 @@ def _(convex_cells):
 
 
 @app.cell
-def _(mesh_geom, ndim, num_cells):
-    key = jax.random.key(seed=4)
-    key, key_cells, key_rays = jax.random.split(key, 3)
-    num_traces = 5000
+def _(ndim):
+    def barycentric_map(carry: tuple[int, float], sample):
+        w_sum, d = carry
+        w = (1 - w_sum) * (1 - jnp.power(1 - sample, 1/d))
+        return (w_sum + w, d - 1), w
 
-    cell_ids = jax.random.choice(key_cells, num_cells, shape=(num_traces,))
+    def select_point(key, cell: Cell, faces: Face, vertices):
+        subcell_key, barycentric_key = jax.random.split(key, num=2)
+        face_id = jax.random.choice(key=subcell_key, a=cell.topology.face_ids, p=cell.geometry.face_weights)
+        vertex_points = vertices[faces[face_id].topology.vertices]
+        # Using notation to match CITATION
+        y = jax.random.uniform(key=barycentric_key, shape=(ndim,))
+        (w_sum, _), w = jax.lax.scan(barycentric_map, (0., ndim), y)
+            
+        centroid_weight = 1 - w_sum
+        return centroid_weight * cell.geometry.centroid + (w @ vertex_points)
+
+    return (select_point,)
+
+
+@app.cell
+def _(mesh, ndim, num_cells, select_point, vertices):
+    _key = jax.random.key(seed=4)
+    key, key_cells, key_rays = jax.random.split(_key, 3)
+    num_traces = 5_000
+
+    cell_ids = jax.random.choice(key_cells, num_cells, shape=(num_traces,), p=mesh.cells.geometry.volume)
 
     key_terminus, key_tangent = jax.random.split(key_rays, ndim)
-    ray_terminus = jnp.asarray(mesh_geom.cells.centroid[cell_ids])
+    point_keys = jax.random.split(key_terminus, num=num_traces)
+    ray_terminus = jax.vmap(select_point, in_axes=(0, 0, None, None))(point_keys, mesh.cells[cell_ids], mesh.faces, jnp.asarray(vertices))
+
     ray_tangents = normalise(jax.random.normal(key_tangent, shape=(num_traces, ndim)))
     ray_travel = jnp.zeros((num_traces,))
     rays = LinearRay(terminus=ray_terminus, tangent=ray_tangents, travel=ray_travel)
-    return cell_ids, rays
+    return cell_ids, ray_terminus, rays
 
 
 @app.cell
@@ -157,45 +181,64 @@ def _(cell_data, cell_ids, mesh, rays, walking):
         new_cell_data = new_cell_data.at[old_cell_ids].add(distance)
         new_cell_ids = jnp.where(mid_cell_ids != -1, mid_cell_ids, old_cell_ids)
         old_cell_ids = new_cell_ids
-
-    print(jnp.count_nonzero(mid_cell_ids != -1))
-    print(distance)
     return new_cell_data, new_rays
 
 
 @app.cell
 def _(mesh_topo, new_rays, rays, vertices):
-    from matplotlib.collections import LineCollection
+    def _():
+        fig, ax = plt.subplots()
+    
+        edges = LineCollection(vertices[mesh_topo.faces.vertices], linewidths=0.5, colors='k')
+        paths = LineCollection(
+            np.stack([rays.p, new_rays.p], axis=1), 
+            cmap="viridis"
+        )
+        paths.set_array(new_rays.travel)
+    
+        ax.add_collection(paths)
+        ax.add_collection(edges)
+        ax.set_aspect("equal")
+        ax.autoscale_view()
+        return ax
 
-    _fig, _ax = plt.subplots()
-
-    edges = LineCollection(vertices[mesh_topo.faces.vertices], linewidths=0.5, colors='k')
-    paths = LineCollection(
-        np.stack([rays.p, new_rays.p], axis=1), 
-        cmap="viridis"
-    )
-    paths.set_array(new_rays.travel)
-
-    _ax.add_collection(paths)
-    _ax.add_collection(edges)
-    _ax.set_aspect("equal")
-    _ax.autoscale_view()
-    _ax
+    # _()
     return
 
 
 @app.cell
-def _(cell_topo, new_cell_data, vertices):
-    from matplotlib.collections import PolyCollection
+def _(cell_topo, mesh, new_cell_data, vertices):
+    def _():
+        fig, ax = plt.subplots()
 
-    _fig, _ax = plt.subplots()
+        polygons = PolyCollection(vertices[cell_topo.vertices], cmap="viridis")
+        polygons.set_array(new_cell_data / mesh.cells.geometry.volume)
+        ax.add_collection(polygons)
+        ax.autoscale_view()
+        fig.colorbar(polygons, ax=ax)
+        return ax
 
-    polygons = PolyCollection(vertices[cell_topo.vertices], cmap="viridis")
-    polygons.set_array(new_cell_data)
-    _ax.add_collection(polygons)
-    _ax.autoscale_view()
-    _fig.colorbar(polygons, ax=_ax)
-    _ax
+
+    _()
+    return
+
+
+@app.cell
+def _(mesh_geom, mesh_topo, ray_terminus, vertices):
+    def _():
+        fig, ax = plt.subplots()
+
+        edges = LineCollection(vertices[mesh_topo.faces.vertices], linewidths=0.5, colors='k')
+
+        ax.add_collection(edges)
+        ax.scatter(*ray_terminus.T, s=0.1)
+        ax.scatter(*mesh_geom.cells.centroid.T, s=2)
+        ax.set_aspect("equal")
+        ax.autoscale_view()
+        return ax
+
+
+    _()
     return
 
 
