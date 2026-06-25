@@ -12,7 +12,7 @@ dependencies = [
     "lox",
     "meshio>=5.3.5",
     "numpy>=2.3.4",
-    "pyvista>=0.46.4",
+    "pyvista[all]>=0.46.4",
     "typed-argument-parser>=1.12.0",
 ]
 

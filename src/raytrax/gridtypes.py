@@ -116,7 +116,7 @@ class MeshTopology(eqx.Module, IndexingMixin):
     def build_geometric(self, vertex_coords: Array) -> MeshGeometry:
         face_geom = self.faces.build_geometric(vertex_coords)
         cell_geom = self.cells.build_geometric(face_geom)
-        return MeshGeometry(faces=face_geom, cells=cell_geom)
+        return MeshGeometry(faces=face_geom, cells=cell_geom, verts=vertex_coords)
 
 
 class MeshGeometry(eqx.Module, IndexingMixin):
@@ -124,6 +124,7 @@ class MeshGeometry(eqx.Module, IndexingMixin):
 
     faces: FaceGeometry
     cells: CellGeometry
+    verts: Array
 
 
 class Mesh(eqx.Module, IndexingMixin):
@@ -143,3 +144,7 @@ class Mesh(eqx.Module, IndexingMixin):
             geometry=self.geometry.cells,
             topology=self.topology.cells,
         )
+
+    @property
+    def verts(self) -> Array:
+        return self.geometry.verts

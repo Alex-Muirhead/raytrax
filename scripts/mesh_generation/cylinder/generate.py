@@ -30,6 +30,7 @@ def create_cylinder_mesh(
 
     gmsh.model.mesh.generate(dim=3)
 
+    gmsh.option.setNumber("Mesh.MshFileVersion", 4.1)
     gmsh.write(output)
     gmsh.finalize()
     print(f"Mesh written to {output}")

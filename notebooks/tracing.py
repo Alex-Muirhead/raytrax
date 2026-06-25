@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.23.6"
+__generated_with = "0.23.10"
 app = marimo.App(width="medium")
 
 with app.setup:
@@ -19,6 +19,7 @@ with app.setup:
     from raytrax.intersections import LinearRay, ConvexCell, crossing
     from raytrax.grid import process_cell_block
     from raytrax.gridtypes import Mesh, Cell, Face
+    from raytrax.random import sphere, simplex
 
 
 @app.function
@@ -47,28 +48,28 @@ def _():
     if False:
         # Generate our own
         width, height = 15, 15
-    
+
         _y, _x = np.mgrid[0:height+1, 0:width+1]
         vertices = np.column_stack([_x.flatten(), _y.flatten()]).astype(float)
         vertex_ids = np.arange(_x.size).reshape(_x.shape)
-    
+
         quad = np.array([
             [0, 0],
             [0, 1],
             [1, 1],
             [1, 0],
         ])
-    
+
         cells = []
-    
+
         for _i in range(height):
             for _j in range(width):
                 cell = vertex_ids[np.unstack(quad + np.array([_i, _j]), axis=-1)]
                 cells.append(cell)
-    
+
         cells = np.array(cells)
         cell_block = meshio.CellBlock("quad", cells)
-    
+
         ndim = 2
         num_cells = width * height
     else:
@@ -78,17 +79,17 @@ def _():
         # Noisy meshio.read
         f = io.StringIO()
         with contextlib.redirect_stdout(f):
-            input_mesh = meshio.read("../plane.msh")
+            input_mesh = meshio.read("../cylinder.msh")
         if stdout := f.getvalue().strip():
             print(stdout)
-        
+
+        ndim = 3
         # Trim the z-coordinate
-        vertices = input_mesh.points[..., :2]
+        vertices = input_mesh.points[..., :ndim]
         cell_block = input_mesh.cells[0]
-    
-        ndim = 2
+
         num_cells = len(cell_block)
-    return cell_block, ndim, num_cells, vertices
+    return cell_block, input_mesh, ndim, num_cells, vertices
 
 
 @app.cell
@@ -115,12 +116,12 @@ def _(mesh):
 @app.cell
 def _(num_cells):
     cell_data = jnp.zeros(num_cells)
-    return (cell_data,)
+    return
 
 
 @app.cell
 def _(convex_cells):
-    def walking(cell_id, ray: LinearRay, mesh: Mesh):
+    def walking(cell_id: int, ray: LinearRay, mesh: Mesh):
         cell = convex_cells[cell_id]
         out_face, distance = crossing(cell=cell, ray=ray)
         next_cell_id = mesh.cells[cell_id].topology.neighbours[out_face]
@@ -132,70 +133,111 @@ def _(convex_cells):
 
 @app.cell
 def _(ndim):
-    def barycentric_map(carry: tuple[int, float], sample):
-        w_sum, d = carry
-        w = (1 - w_sum) * (1 - jnp.power(1 - sample, 1/d))
-        return (w_sum + w, d - 1), w
-
     def select_point(key, cell: Cell, faces: Face, vertices):
         subcell_key, barycentric_key = jax.random.split(key, num=2)
         face_id = jax.random.choice(key=subcell_key, a=cell.topology.face_ids, p=cell.geometry.face_weights)
         vertex_points = vertices[faces[face_id].topology.vertices]
-        # Using notation to match CITATION
-        y = jax.random.uniform(key=barycentric_key, shape=(ndim,))
-        (w_sum, _), w = jax.lax.scan(barycentric_map, (0., ndim), y)
-            
-        centroid_weight = 1 - w_sum
-        return centroid_weight * cell.geometry.centroid + (w @ vertex_points)
+        vertex_weights = simplex(key=barycentric_key, ndim=ndim)
+        return vertex_weights[0] * cell.geometry.centroid + vertex_weights[1:] @ vertex_points
 
     return (select_point,)
 
 
 @app.cell
-def _(mesh, ndim, num_cells, select_point, vertices):
-    _key = jax.random.key(seed=4)
-    key, key_cells, key_rays = jax.random.split(_key, 3)
-    num_traces = 5_000
+def _(ndim, num_cells, select_point):
+    def select_start(key, mesh: Mesh):
+        key_cell, key_point, key_direction = jax.random.split(key, 3)
+        cell_id = jax.random.choice(key_cell, num_cells, p=mesh.cells.geometry.volume)
+        terminus = select_point(key_point, mesh.cells[cell_id], mesh.faces, mesh.verts)
+        tangent = sphere(key_direction, ndim)
+        ray = LinearRay(terminus=terminus, tangent=tangent, travel=jnp.zeros(()))
+        return ray, cell_id
 
-    cell_ids = jax.random.choice(key_cells, num_cells, shape=(num_traces,), p=mesh.cells.geometry.volume)
-
-    key_terminus, key_tangent = jax.random.split(key_rays, ndim)
-    point_keys = jax.random.split(key_terminus, num=num_traces)
-    ray_terminus = jax.vmap(select_point, in_axes=(0, 0, None, None))(point_keys, mesh.cells[cell_ids], mesh.faces, jnp.asarray(vertices))
-
-    ray_tangents = normalise(jax.random.normal(key_tangent, shape=(num_traces, ndim)))
-    ray_travel = jnp.zeros((num_traces,))
-    rays = LinearRay(terminus=ray_terminus, tangent=ray_tangents, travel=ray_travel)
-    return cell_ids, ray_terminus, rays
+    return (select_start,)
 
 
 @app.cell
-def _(cell_data, cell_ids, mesh, rays, walking):
-    new_cell_ids = cell_ids
-    old_cell_ids = cell_ids
-    new_rays = rays
-    new_cell_data = cell_data
+def _(Self):
+    class RayState(eqx.Module):
+        energy: jax.Array
+        cell_id: jax.Array
 
-    for _ in range(20):
-        mid_cell_ids, new_rays, distance = jax.vmap(lox.tap(walking), in_axes=(0, 0, None))(old_cell_ids, new_rays, mesh)
-        new_cell_data = new_cell_data.at[old_cell_ids].add(distance)
-        new_cell_ids = jnp.where(mid_cell_ids != -1, mid_cell_ids, old_cell_ids)
-        old_cell_ids = new_cell_ids
-    return new_cell_data, new_rays
+        @classmethod
+        def new(cls, cell_id: jax.Array) -> Self:
+            shape = cell_id.shape
+            return cls(energy=jnp.zeros(shape), cell_id=cell_id)
+
+    return
+
+
+@app.cell
+def _(mesh, num_cells, select_start, walking):
+    _key = jax.random.key(seed=4)
+    key, key_cells, key_rays = jax.random.split(_key, 3)
+    num_traces = 500
+
+    keys = jax.random.split(key, num_traces)
+    rays, cell_ids = jax.vmap(jax.jit(select_start), in_axes=(0, None))(keys, mesh)
+
+    optical_thickess = 1.0
+    cell_energies = jnp.zeros(shape=(num_cells,))
+    ray_energies = jnp.where(rays.terminus[:, 0] < 0, 1.0, 0.0)
+
+    def step(cell_id, ray, ray_energy, mesh):
+        new_cell_id, new_ray, distance = walking(cell_id, ray, mesh)
+        distance = jnp.where(cell_id == -1, 0.0, distance)
+        cell_id = jnp.where(cell_id == -1, -1, new_cell_id)
+        ray = replace(ray, travel=jnp.where(cell_id == -1, ray.travel, new_ray.travel))
+        optical_distance = optical_thickess * distance
+        ray_energy = ray_energy * jnp.exp(-optical_distance)
+        energy_decay = ray_energy * (1 - jnp.exp(-optical_distance))
+        return new_cell_id, ray, ray_energy, energy_decay
+
+    def collect_step(cell_ids, rays, ray_energies, cell_energies, mesh):
+        new_cell_ids, rays, ray_energies, energy_dropped = jax.vmap(jax.jit(step), in_axes=(0, 0, 0, None))(cell_ids, rays, ray_energies, mesh)
+        # This *must* be *outside* of the vmap, otherwise all HELL breaks loose with allocs!
+        cell_energies = cell_energies.at[cell_ids].add(energy_dropped)
+        return new_cell_ids, rays, ray_energies, cell_energies, mesh
+
+    def wrapped_collect_step(i, state):
+        return collect_step(*state)
+
+    init_state = (cell_ids, rays, ray_energies, cell_energies, mesh)
+    final_state = jax.lax.fori_loop(0, 6, wrapped_collect_step, init_state)
+    new_cell_ids, new_rays, new_ray_energies, new_cell_energies, _ = final_state
+    return new_cell_energies, new_cell_ids, new_ray_energies, new_rays, rays
+
+
+@app.cell
+def _(new_ray_energies):
+    jnp.where(jnp.isnan(new_ray_energies))
+    return
+
+
+@app.cell
+def _(new_cell_ids):
+    new_cell_ids[167]
+    return
+
+
+@app.cell
+def _(new_rays):
+    new_rays.travel[167]
+    return
 
 
 @app.cell
 def _(mesh_topo, new_rays, rays, vertices):
     def _():
         fig, ax = plt.subplots()
-    
+
         edges = LineCollection(vertices[mesh_topo.faces.vertices], linewidths=0.5, colors='k')
         paths = LineCollection(
             np.stack([rays.p, new_rays.p], axis=1), 
             cmap="viridis"
         )
         paths.set_array(new_rays.travel)
-    
+
         ax.add_collection(paths)
         ax.add_collection(edges)
         ax.set_aspect("equal")
@@ -211,7 +253,7 @@ def _(cell_topo, mesh, new_cell_data, vertices):
     def _():
         fig, ax = plt.subplots()
 
-        polygons = PolyCollection(vertices[cell_topo.vertices], cmap="viridis")
+        polygons = PolyCollection(vertices[cell_topo.vertices][..., :2], cmap="viridis")
         polygons.set_array(new_cell_data / mesh.cells.geometry.volume)
         ax.add_collection(polygons)
         ax.autoscale_view()
@@ -219,18 +261,19 @@ def _(cell_topo, mesh, new_cell_data, vertices):
         return ax
 
 
-    _()
+    # _()
     return
 
 
 @app.cell
 def _(mesh_geom, mesh_topo, ray_terminus, vertices):
     def _():
+        # subplot_kw={"projection": "3d"}
         fig, ax = plt.subplots()
 
         edges = LineCollection(vertices[mesh_topo.faces.vertices], linewidths=0.5, colors='k')
-
         ax.add_collection(edges)
+
         ax.scatter(*ray_terminus.T, s=0.1)
         ax.scatter(*mesh_geom.cells.centroid.T, s=2)
         ax.set_aspect("equal")
@@ -238,7 +281,14 @@ def _(mesh_geom, mesh_topo, ray_terminus, vertices):
         return ax
 
 
-    _()
+    # _()
+    return
+
+
+@app.cell
+def _(input_mesh, mesh, new_cell_energies):
+    input_mesh.cell_data['energy'] = np.asarray((new_cell_energies / mesh.cells.geometry.volume))
+    input_mesh.write("../cylinder.vtk")
     return
 
 
