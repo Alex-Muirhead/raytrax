@@ -5,6 +5,7 @@ app = marimo.App(width="medium")
 
 with app.setup:
     from copy import replace
+    from functools import partial
 
     import equinox as eqx
     import jax
@@ -145,11 +146,12 @@ def _(ndim):
 
 @app.cell
 def _(ndim, num_cells, select_point):
-    def select_start(key, mesh: Mesh):
+    def select_start(key, field, mesh: Mesh):
         key_cell, key_point, key_direction = jax.random.split(key, 3)
-        cell_id = jax.random.choice(key_cell, num_cells, p=mesh.cells.geometry.volume)
+        cell_id = jax.random.choice(key_cell, num_cells, p=field)
         terminus = select_point(key_point, mesh.cells[cell_id], mesh.faces, mesh.verts)
         tangent = sphere(key_direction, ndim)
+        # tangent = jnp.array([1.0, 0.0, 0.0])
         ray = LinearRay(terminus=terminus, tangent=tangent, travel=jnp.zeros(()))
         return ray, cell_id
 
@@ -174,24 +176,37 @@ def _(Self):
 def _(mesh, num_cells, select_start, walking):
     _key = jax.random.key(seed=4)
     key, key_cells, key_rays = jax.random.split(_key, 3)
-    num_traces = 500
+    num_traces = 500_000
+
+    cell_energies = jnp.where(
+        mesh.geometry.cells.centroid[:, 0] < 0, 
+        mesh.geometry.cells.volume, 
+        0.0,
+    )
 
     keys = jax.random.split(key, num_traces)
-    rays, cell_ids = jax.vmap(jax.jit(select_start), in_axes=(0, None))(keys, mesh)
+    rays, cell_ids = jax.vmap(jax.jit(select_start), in_axes=(0, None, None))(keys, cell_energies, mesh)
 
+
+    # NOTE: Divide by 2 since only half the volume is "hot"
+
+    total_energy = cell_energies.sum()
+    num_rays_per_cell = jnp.zeros(num_cells).at[cell_ids].add(1.0)
+    ray_energies = (cell_energies / num_rays_per_cell)[cell_ids]
+    # ray_energies = jnp.full(num_traces, fill_value=total_energy / num_traces)
+    # cell_energies = cell_energies.at[cell_ids].subtract(ray_energies)
+    cell_energies = jnp.zeros_like(cell_energies)
     optical_thickess = 1.0
-    cell_energies = jnp.zeros(shape=(num_cells,))
-    ray_energies = jnp.where(rays.terminus[:, 0] < 0, 1.0, 0.0)
 
     def step(cell_id, ray, ray_energy, mesh):
         new_cell_id, new_ray, distance = walking(cell_id, ray, mesh)
         distance = jnp.where(cell_id == -1, 0.0, distance)
-        cell_id = jnp.where(cell_id == -1, -1, new_cell_id)
         ray = replace(ray, travel=jnp.where(cell_id == -1, ray.travel, new_ray.travel))
+        new_cell_id = jnp.where(cell_id == -1, -1, new_cell_id)
         optical_distance = optical_thickess * distance
-        ray_energy = ray_energy * jnp.exp(-optical_distance)
         energy_decay = ray_energy * (1 - jnp.exp(-optical_distance))
-        return new_cell_id, ray, ray_energy, energy_decay
+        new_ray_energy = ray_energy * jnp.exp(-optical_distance)
+        return new_cell_id, ray, new_ray_energy, energy_decay
 
     def collect_step(cell_ids, rays, ray_energies, cell_energies, mesh):
         new_cell_ids, rays, ray_energies, energy_dropped = jax.vmap(jax.jit(step), in_axes=(0, 0, 0, None))(cell_ids, rays, ray_energies, mesh)
@@ -203,26 +218,14 @@ def _(mesh, num_cells, select_start, walking):
         return collect_step(*state)
 
     init_state = (cell_ids, rays, ray_energies, cell_energies, mesh)
-    final_state = jax.lax.fori_loop(0, 6, wrapped_collect_step, init_state)
+    final_state = jax.lax.fori_loop(0, 100, wrapped_collect_step, init_state)
     new_cell_ids, new_rays, new_ray_energies, new_cell_energies, _ = final_state
-    return new_cell_energies, new_cell_ids, new_ray_energies, new_rays, rays
+    return new_cell_energies, new_ray_energies, new_rays, ray_energies, rays
 
 
 @app.cell
-def _(new_ray_energies):
-    jnp.where(jnp.isnan(new_ray_energies))
-    return
-
-
-@app.cell
-def _(new_cell_ids):
-    new_cell_ids[167]
-    return
-
-
-@app.cell
-def _(new_rays):
-    new_rays.travel[167]
+def _(new_ray_energies, ray_energies):
+    new_ray_energies / ray_energies
     return
 
 
@@ -244,7 +247,7 @@ def _(mesh_topo, new_rays, rays, vertices):
         ax.autoscale_view()
         return ax
 
-    # _()
+    _()
     return
 
 
@@ -287,7 +290,7 @@ def _(mesh_geom, mesh_topo, ray_terminus, vertices):
 
 @app.cell
 def _(input_mesh, mesh, new_cell_energies):
-    input_mesh.cell_data['energy'] = np.asarray((new_cell_energies / mesh.cells.geometry.volume))
+    input_mesh.cell_data['energy'] = np.asarray(new_cell_energies / mesh.geometry.cells.volume)
     input_mesh.write("../cylinder.vtk")
     return
 
