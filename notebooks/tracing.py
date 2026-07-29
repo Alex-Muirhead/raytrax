@@ -163,6 +163,31 @@ def _(mesh, new_cell_energies):
 
 
 @app.cell
+def _(mesh, new_cell_energies):
+    def _():
+        fig, ax = plt.subplots()
+
+        # Volume-weighted mean heating in slabs along x
+        x = mesh.geometry.cells.centroid[:, 0]
+        bins = jnp.linspace(-0.5, 0.5, 21)
+        idx = jnp.digitize(x, bins) - 1
+        slab_energy = jnp.zeros(bins.size - 1).at[idx].add(new_cell_energies)
+        slab_volume = jnp.zeros(bins.size - 1).at[idx].add(mesh.geometry.cells.volume)
+        ax.stairs(slab_energy / slab_volume, bins, label="Monte-Carlo (binned)")
+
+        depth = np.linspace(0.0, 1.0, 200)
+        ax.plot(depth - 0.5, 2 * expn(2, depth), c="C1", label="Tangent slab $2E_2(\\kappa x)$")
+
+        ax.set_xlabel("x")
+        ax.set_ylabel("Volumetric heating")
+        ax.legend()
+        return ax
+
+    _()
+    return
+
+
+@app.cell
 def _(new_ray_energies, ray_energies):
     new_ray_energies / ray_energies
     return
@@ -173,8 +198,9 @@ def _(mesh_topo, new_rays, rays, vertices):
     def _():
         fig, ax = plt.subplots()
 
-        edges = LineCollection(vertices[mesh_topo.faces.vertices], linewidths=0.5, colors="k")
-        paths = LineCollection(np.stack([rays.p, new_rays.p], axis=1), cmap="viridis")
+        # Project onto the xy-plane
+        edges = LineCollection(vertices[mesh_topo.faces.vertices][..., :2], linewidths=0.5, colors="k")
+        paths = LineCollection(np.stack([rays.p, new_rays.p], axis=1)[..., :2], cmap="viridis")
         paths.set_array(new_rays.travel)
 
         ax.add_collection(paths)
