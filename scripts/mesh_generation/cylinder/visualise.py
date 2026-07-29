@@ -3,8 +3,24 @@ from pyvista import UnstructuredGrid
 from tap import Tap
 
 
-def visualise_cross_section(mesh_file: str, cut_cells: bool = False, scalars: str | None = None) -> None:
+def visualise_cross_section(
+    mesh_file: str,
+    cut_cells: bool = False,
+    scalars: str | None = None,
+    mode: str = "cells",
+) -> None:
     mesh = pv.read(mesh_file)
+
+    match mode:
+        case "cells":
+            mesh = mesh.extract_cells_by_type(pv.CellType.TETRA)
+        case "faces":
+            mesh = mesh.extract_cells_by_type(pv.CellType.TRIANGLE)
+        case _:
+            raise ValueError(f"Unknown mode {mode!r}")
+
+    if mesh.number_of_cells == 0:
+        raise ValueError(f"Mesh contains no {mode} to visualise")
 
     if cut_cells:
         # Clip at y=0, keeping the y<=0 half (cuts through cells at the boundary).
@@ -32,14 +48,16 @@ class Args(Tap):
     mesh_file: str  # Path to the mesh file (e.g. cylinder.msh, cylinder.vtk)
     cut_cells: bool = False  # Show all cells with at least one vertex at y<=0, rather than clipping cells at y=0.
     scalars: str | None = None
+    mode: str = "cells"  # Visualise volume "cells" or boundary "faces"
 
     def configure(self) -> None:
         self.add_argument("mesh_file")  # Makes it positional
+        self.add_argument("--mode", choices=["cells", "faces"])
 
 
 def main() -> None:
     args = Args(underscores_to_dashes=True).parse_args()
-    visualise_cross_section(args.mesh_file, cut_cells=args.cut_cells, scalars=args.scalars)
+    visualise_cross_section(args.mesh_file, cut_cells=args.cut_cells, scalars=args.scalars, mode=args.mode)
 
 
 if __name__ == "__main__":

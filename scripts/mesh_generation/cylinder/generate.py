@@ -32,7 +32,7 @@ def create_cylinder_mesh(
         if abs(x - (-length / 2)) < 1e-9:
             name = "hot_end"
         elif abs(x - (+length / 2)) < 1e-9:
-            name = "cold_end"
+            name = "wall"
         else:
             name = "lateral"
         gmsh.model.addPhysicalGroup(dim=2, tags=[tag], name=name)

@@ -1,3 +1,4 @@
+import equinox as eqx
 import numpy as np
 
 from raytrax.gridtypes import CellTopology, FaceTopology, MeshTopology
@@ -182,6 +183,31 @@ def boundary_groups(mesh_topology: MeshTopology, mesh) -> dict[str, np.ndarray]:
             raise ValueError(f"Face group {name!r} contains interior faces")
         groups[name] = face_ids
     return groups
+
+
+def apply_boundaries(mesh_topology: MeshTopology, groups: dict[str, np.ndarray]) -> tuple[MeshTopology, dict[str, int]]:
+    """Assign a distinct negative sentinel to each boundary face group.
+
+    Sentinels are written into `cells.neighbours`; -1 stays reserved for
+    untagged boundaries. Returns the updated topology and the name -> sentinel
+    mapping.
+    """
+    neighbours = np.asarray(mesh_topology.cells.neighbours).copy()
+    cell_face_ids = np.asarray(mesh_topology.cells.face_ids)
+    face_cells = np.asarray(mesh_topology.faces.cells)
+
+    sentinels = {}
+    for offset, (name, face_ids) in enumerate(groups.items()):
+        sentinel = -(offset + 2)
+        interior_cells = face_cells[face_ids].max(axis=-1)
+        local_slots = np.argmax(cell_face_ids[interior_cells] == face_ids[:, None], axis=-1)
+        if np.any(neighbours[interior_cells, local_slots] != -1):
+            raise ValueError(f"Face group {name!r} contains interior or already-tagged faces")
+        neighbours[interior_cells, local_slots] = sentinel
+        sentinels[name] = sentinel
+
+    mesh_topology = eqx.tree_at(lambda t: t.cells.neighbours, mesh_topology, neighbours)
+    return mesh_topology, sentinels
 
 
 def process_cell_block(cell_block) -> MeshTopology:

@@ -14,7 +14,7 @@ with app.setup:
     from matplotlib.collections import LineCollection, PolyCollection
     from scipy.special import expn
 
-    from raytrax.grid import boundary_groups, process_cell_block
+    from raytrax.grid import apply_boundaries, boundary_groups, match_faces, process_cell_block
     from raytrax.gridtypes import Mesh
     from raytrax.sampling import select_emission
     from raytrax.transport import trace
@@ -90,16 +90,18 @@ def _():
         cell_block = next(block for block in input_mesh.cells if block.type == "tetra")
 
         num_cells = len(cell_block)
-    return cell_block, input_mesh, ndim, num_cells, vertices
+    return cell_block, input_mesh, num_cells, vertices
 
 
 @app.cell
-def _(cell_block, vertices):
+def _(cell_block, input_mesh, vertices):
     mesh_topo = process_cell_block(cell_block)
+    boundaries = boundary_groups(mesh_topo, input_mesh)
+    mesh_topo, sentinels = apply_boundaries(mesh_topo, boundaries)
     mesh_geom = mesh_topo.build_geometric(vertex_coords=vertices)
     mesh = Mesh(geometry=mesh_geom, topology=mesh_topo)
     mesh = jax.tree.map(jnp.asarray, mesh)
-    return mesh, mesh_geom, mesh_topo
+    return boundaries, mesh, mesh_geom, mesh_topo, sentinels
 
 
 @app.cell
@@ -109,17 +111,16 @@ def _(mesh):
 
 
 @app.cell
-def _(input_mesh, mesh_topo):
-    boundaries = boundary_groups(mesh_topo, input_mesh)
+def _(boundaries):
     hot_face_ids = jnp.asarray(boundaries["hot_end"])
     return (hot_face_ids,)
 
 
 @app.cell
-def _(hot_face_ids, mesh, num_cells):
+def _(hot_face_ids, mesh, num_cells, sentinels):
     _key = jax.random.key(seed=4)
     key, key_cells, key_rays = jax.random.split(_key, 3)
-    num_traces = 500_000
+    num_traces = 5_000_000
 
     # Cold gas; hot end cap with sigma * T^4 = 1
     cell_energies = jnp.zeros(num_cells)
@@ -134,10 +135,17 @@ def _(hot_face_ids, mesh, num_cells):
     ray_energies = jnp.full(num_traces, fill_value=total_energy / num_traces)
     optical_thickness = 1.0
 
-    new_cell_ids, new_rays, new_ray_energies, new_cell_energies = trace(
-        cell_ids, rays, ray_energies, mesh, optical_thickness, num_steps=100
+    new_cell_ids, new_rays, new_ray_energies, new_cell_energies, new_face_energies = trace(
+        cell_ids, rays, ray_energies, mesh, optical_thickness, sentinels["wall"], num_steps=100
     )
-    return new_cell_energies, new_ray_energies, new_rays, ray_energies, rays
+    return (
+        new_cell_energies,
+        new_face_energies,
+        new_ray_energies,
+        new_rays,
+        ray_energies,
+        rays,
+    )
 
 
 @app.cell
@@ -188,8 +196,12 @@ def _(mesh, new_cell_energies):
 
 
 @app.cell
-def _(new_ray_energies, ray_energies):
-    new_ray_energies / ray_energies
+def _(new_cell_energies, new_face_energies, new_ray_energies, ray_energies):
+    # Conservation: gas + wall + still-carried (escaped) energy
+    print(f"input:   {ray_energies.sum():.6f}")
+    print(f"gas:     {new_cell_energies.sum():.6f}")
+    print(f"wall:    {new_face_energies.sum():.6f}")
+    print(f"escaped: {new_ray_energies.sum():.6f}")
     return
 
 
@@ -209,7 +221,7 @@ def _(mesh_topo, new_rays, rays, vertices):
         ax.autoscale_view()
         return ax
 
-    _()
+    # _()
     return
 
 
@@ -249,12 +261,20 @@ def _(mesh_geom, mesh_topo, ray_terminus, vertices):
 
 
 @app.cell
-def _(cell_block, input_mesh, mesh, new_cell_energies):
-    # Write only the volume block; cell_data needs one array per block
+def _(input_mesh, mesh, mesh_topo, new_cell_energies, new_face_energies):
+    # One heating array per block: volumetric for cells, per-area for faces
+    _heating = []
+    for _block in input_mesh.cells:
+        if _block.type == "tetra":
+            _heating.append(np.asarray(new_cell_energies / mesh.geometry.cells.volume))
+        else:
+            _ids = match_faces(mesh_topo.faces, _block.data)
+            _heating.append(np.asarray(new_face_energies[_ids] / mesh.geometry.faces.area[_ids]))
+
     output_mesh = meshio.Mesh(
         points=input_mesh.points,
-        cells=[cell_block],
-        cell_data={"energy": [np.asarray(new_cell_energies / mesh.geometry.cells.volume)]},
+        cells=input_mesh.cells,
+        cell_data={"heating": _heating},
     )
     output_mesh.write("../cylinder.vtk")
     return

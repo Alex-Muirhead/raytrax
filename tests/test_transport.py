@@ -49,15 +49,15 @@ def test_walking_crosses_to_neighbour_then_exterior():
         tangent=jnp.array([1.0, 0.0]),
         travel=jnp.zeros(()),
     )
-    next_cell, ray, distance = walking(jnp.array(0), ray, mesh)
+    next_cell, ray, distance, exit_face = walking(jnp.array(0), ray, mesh)
     assert next_cell == 1
     assert distance == approx(0.5)
-    next_cell, ray, distance = walking(next_cell, ray, mesh)
+    next_cell, ray, distance, exit_face = walking(next_cell, ray, mesh)
     assert next_cell == EXTERIOR
     assert distance == approx(1.0)
     assert ray.travel == approx(1.5)
     # A terminated ray stays put and remains terminated
-    next_cell, ray, distance = walking(next_cell, ray, mesh)
+    next_cell, ray, distance, exit_face = walking(next_cell, ray, mesh)
     assert next_cell == EXTERIOR
     assert distance == approx(0.0)
     assert ray.travel == approx(1.5)
@@ -72,8 +72,9 @@ def test_trace_conserves_energy():
     )
     cell_ids = jnp.array([0, 0])
     ray_energies = jnp.array([1.0, 2.0])
-    cell_ids, rays, remaining, deposited = trace(
-        cell_ids, rays, ray_energies, mesh, optical_thickness=1.0, num_steps=10
+    cell_ids, rays, remaining, deposited, face_deposits = trace(
+        cell_ids, rays, ray_energies, mesh, optical_thickness=1.0, wall_sentinel=-2, num_steps=10
     )
     assert np.all(cell_ids == EXTERIOR)
+    assert np.all(np.asarray(face_deposits) == 0.0)  # No tagged wall
     assert remaining.sum() + deposited.sum() == approx(3.0)
