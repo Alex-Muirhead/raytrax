@@ -196,6 +196,39 @@ def _(mesh, new_cell_energies):
 
 
 @app.cell
+def _(mesh, new_cell_energies):
+    def _():
+        fig, ax = plt.subplots()
+
+        # Volume-weighted mean heating in radial shells, split by axial slab
+        x = mesh.geometry.cells.centroid[:, 0]
+        radius = jnp.linalg.vector_norm(mesh.geometry.cells.centroid[:, 1:], axis=-1)
+
+        x_bins = np.array([-0.5, -0.25, 0.0, 0.25, 0.5])
+        r_bins = jnp.linspace(0.0, 1.0, 11)
+        idx = (jnp.digitize(x, x_bins) - 1, jnp.digitize(radius, r_bins) - 1)
+
+        shape = (x_bins.size - 1, r_bins.size - 1)
+        shell_energy = jnp.zeros(shape).at[idx].add(new_cell_energies)
+        shell_volume = jnp.zeros(shape).at[idx].add(mesh.geometry.cells.volume)
+
+        for _i, (_lo, _hi) in enumerate(zip(x_bins[:-1], x_bins[1:])):
+            ax.stairs(shell_energy[_i] / shell_volume[_i], r_bins, color=f"C{_i}", label=f"${_lo:+.2f} < x < {_hi:+.2f}$")
+            # The tangent slab is radially uniform, so compare against its slab mean
+            depth = np.linspace(_lo + 0.5, _hi + 0.5, 50)
+            ax.axhline(np.mean(2 * expn(2, depth)), color=f"C{_i}", ls="--", lw=0.8)
+
+        ax.set_xlabel("r")
+        ax.set_ylabel("Volumetric heating")
+        ax.legend()
+        return ax
+
+
+    _()
+    return
+
+
+@app.cell
 def _(new_cell_energies, new_face_energies, new_ray_energies, ray_energies):
     # Conservation: gas + wall + still-carried (escaped) energy
     print(f"input:   {ray_energies.sum():.6f}")
