@@ -223,9 +223,14 @@ def _(mesh_geom, mesh_topo, ray_terminus, vertices):
 
 
 @app.cell
-def _(input_mesh, mesh, new_cell_energies):
-    input_mesh.cell_data["energy"] = np.asarray(new_cell_energies / mesh.geometry.cells.volume)
-    input_mesh.write("../cylinder.vtk")
+def _(cell_block, input_mesh, mesh, new_cell_energies):
+    # Write only the volume block; cell_data needs one array per block
+    output_mesh = meshio.Mesh(
+        points=input_mesh.points,
+        cells=[cell_block],
+        cell_data={"energy": [np.asarray(new_cell_energies / mesh.geometry.cells.volume)]},
+    )
+    output_mesh.write("../cylinder.vtk")
     return
 
 
