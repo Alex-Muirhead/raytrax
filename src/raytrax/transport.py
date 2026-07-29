@@ -11,25 +11,24 @@ EXTERIOR = -1
 
 
 def walking(cell_id: Array, ray: LinearRay, mesh: Mesh):
-    """Cross one cell, returning the next cell, advanced ray, and distance."""
+    """Cross one cell, returning the next cell, advanced ray, and distance.
+
+    A terminated ray (exterior cell) stays put and remains terminated.
+    """
     cell = mesh.convex_cells[cell_id]
     out_face, distance = crossing(cell=cell, ray=ray)
-    next_cell_id = mesh.cells[cell_id].topology.neighbours[out_face]
+    terminated = cell_id == EXTERIOR
+    distance = jnp.where(terminated, 0.0, distance)
+    next_cell_id = jnp.where(terminated, EXTERIOR, mesh.cells[cell_id].topology.neighbours[out_face])
     next_ray = replace(ray, travel=ray.travel + distance)
     return next_cell_id, next_ray, distance
 
 
 def step(cell_id, ray: LinearRay, ray_energy, mesh: Mesh, optical_thickness):
     """One continuous-forward deposition step across a single cell."""
-    new_cell_id, new_ray, distance = walking(cell_id, ray, mesh)
-    # Terminated rays are frozen in place and deposit nothing
-    distance = jnp.where(cell_id == EXTERIOR, 0.0, distance)
-    ray = replace(ray, travel=jnp.where(cell_id == EXTERIOR, ray.travel, new_ray.travel))
-    new_cell_id = jnp.where(cell_id == EXTERIOR, EXTERIOR, new_cell_id)
-    optical_distance = optical_thickness * distance
-    energy_dropped = ray_energy * (1 - jnp.exp(-optical_distance))
-    new_ray_energy = ray_energy * jnp.exp(-optical_distance)
-    return new_cell_id, ray, new_ray_energy, energy_dropped
+    next_cell_id, next_ray, distance = walking(cell_id, ray, mesh)
+    transmission = jnp.exp(-optical_thickness * distance)
+    return next_cell_id, next_ray, ray_energy * transmission, ray_energy * (1 - transmission)
 
 
 def collect_step(cell_ids, rays, ray_energies, cell_energies, mesh, optical_thickness):

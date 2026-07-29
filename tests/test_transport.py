@@ -56,6 +56,11 @@ def test_walking_crosses_to_neighbour_then_exterior():
     assert next_cell == EXTERIOR
     assert distance == approx(1.0)
     assert ray.travel == approx(1.5)
+    # A terminated ray stays put and remains terminated
+    next_cell, ray, distance = walking(next_cell, ray, mesh)
+    assert next_cell == EXTERIOR
+    assert distance == approx(0.0)
+    assert ray.travel == approx(1.5)
 
 
 def test_trace_conserves_energy():
