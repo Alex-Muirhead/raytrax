@@ -26,6 +26,17 @@ def create_cylinder_mesh(
 
     gmsh.model.addPhysicalGroup(dim=3, tags=[vol_tag], name="cylinder")
 
+    # Tag the boundary surfaces: end caps by their centre of mass, rest is lateral
+    for dim, tag in gmsh.model.getBoundary([(3, vol_tag)], oriented=False):
+        x, y, z = gmsh.model.occ.getCenterOfMass(dim, tag)
+        if abs(x - (-length / 2)) < 1e-9:
+            name = "hot_end"
+        elif abs(x - (+length / 2)) < 1e-9:
+            name = "cold_end"
+        else:
+            name = "lateral"
+        gmsh.model.addPhysicalGroup(dim=2, tags=[tag], name=name)
+
     gmsh.option.setNumber("Mesh.MeshSizeFactor", mesh_size)
 
     gmsh.model.mesh.generate(dim=3)

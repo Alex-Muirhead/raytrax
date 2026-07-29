@@ -149,6 +149,41 @@ def lex_unique(
     return ret
 
 
+def match_faces(face_topology: FaceTopology, face_vertices) -> np.ndarray:
+    """Find the face ids of faces given by their (unsorted) vertex ids."""
+    keys, _ = sort_with_parity_bit(np.asarray(face_vertices), axis=-1)
+    stored = np.asarray(face_topology.vertices)
+    num_stored, _ = stored.shape
+
+    # If every query key already exists in `stored`, the unique keys of the
+    # combined array are exactly the stored keys.
+    combined_keys, combined_ids = lex_unique(np.concatenate([stored, keys], axis=0), return_inverse=True)
+    if len(combined_keys) != num_stored:
+        raise ValueError("Some queried faces do not exist in the mesh")
+
+    unique_to_stored = np.empty(num_stored, dtype=int)
+    unique_to_stored[combined_ids[:num_stored]] = np.arange(num_stored)
+    return unique_to_stored[combined_ids[num_stored:]]
+
+
+def boundary_groups(mesh_topology: MeshTopology, mesh) -> dict[str, np.ndarray]:
+    """Map tagged face groups of a meshio mesh to boundary face ids."""
+    face_types = {2: "line", 3: "triangle", 4: "quad"}
+    face_type = face_types[mesh_topology.faces.vertices.shape[1]]
+    all_faces = np.concatenate([block.data for block in mesh.cells if block.type == face_type])
+    face_cells = np.asarray(mesh_topology.faces.cells)
+
+    groups = {}
+    for name, sets in mesh.cell_sets_dict.items():
+        if name == "gmsh:bounding_entities" or face_type not in sets:
+            continue
+        face_ids = match_faces(mesh_topology.faces, all_faces[sets[face_type]])
+        if np.any(np.all(face_cells[face_ids] != -1, axis=-1)):
+            raise ValueError(f"Face group {name!r} contains interior faces")
+        groups[name] = face_ids
+    return groups
+
+
 def process_cell_block(cell_block) -> MeshTopology:
     """Build a `MeshTopology` from a meshio `CellBlock`.
 

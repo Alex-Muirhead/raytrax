@@ -39,7 +39,7 @@ def _(jnp, sphere_samples):
         alignment = (vector[None, :] * sphere_samples).sum(axis=-1)
         alignment = alignment.at[i].set(jnp.nan)
         best = jnp.arccos(jnp.minimum(jnp.nanmax(alignment), 1.0))
-        return i+1, best
+        return i + 1, best
 
     return (angular_distance,)
 
@@ -48,7 +48,7 @@ def _(jnp, sphere_samples):
 def _(angular_distance, jax, jnp, num_samples, sphere_samples):
     _, sphere_distances = jax.lax.scan(angular_distance, 0, sphere_samples)
     print(f"Average distance is {jnp.mean(sphere_distances):.3f} rad")
-    print(f"Expected distance is {2/jnp.sqrt(num_samples):.3f} rad")
+    print(f"Expected distance is {2 / jnp.sqrt(num_samples):.3f} rad")
     return (sphere_distances,)
 
 
@@ -59,7 +59,7 @@ def _(jnp, plt, sphere_distances, sphere_samples):
     elevation_samples = jnp.arccos(sphere_samples[:, 2])
 
     def _():
-        fig, ax = plt.subplots(subplot_kw={'projection': '3d'})
+        fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
         h = ax.scatter(*sphere_samples.T, c=sphere_distances)
         ax.set_aspect("equal")
         fig.colorbar(h)
@@ -72,11 +72,11 @@ def _(jnp, plt, sphere_distances, sphere_samples):
 @app.cell
 def _(timeit):
     _timer = timeit.Timer(
-        "sphere(key=key, ndim=3, shape=num_samples).block_until_ready()", 
-        setup="sphere(key=key, ndim=3, shape=num_samples)", 
+        "sphere(key=key, ndim=3, shape=num_samples).block_until_ready()",
+        setup="sphere(key=key, ndim=3, shape=num_samples)",
         globals=globals(),
     )
-    _ = _timer.autorange(callback=lambda n, t: print(f"Amortised time of {t/n*1e6:>3.0f}us over {n:>4} runs"))
+    _ = _timer.autorange(callback=lambda n, t: print(f"Amortised time of {t / n * 1e6:>3.0f}us over {n:>4} runs"))
     return
 
 
@@ -87,7 +87,7 @@ def _(jax, jnp):
     # Scale triangle to fit in (0,1) box
     vertices -= jnp.min(vertices, axis=0)
     vertices /= jnp.max(vertices, axis=0)
-    simplex_area = 1/2 * jnp.abs(jnp.cross(vertices[0, :] - vertices[1, :], vertices[2, :] - vertices[1, :]))
+    simplex_area = 1 / 2 * jnp.abs(jnp.cross(vertices[0, :] - vertices[1, :], vertices[2, :] - vertices[1, :]))
     print(f"Simplex area: {simplex_area:.2f}")
     return simplex_area, vertices
 
@@ -106,7 +106,7 @@ def _(jnp, simplex_points):
         dist = jnp.linalg.vector_norm(vector[None, :] - simplex_points, axis=-1)
         dist = dist.at[i].set(jnp.nan)
         best = jnp.maximum(jnp.nanmin(dist), 0.0)
-        return i+1, best
+        return i + 1, best
 
     return (linear_distance,)
 
@@ -130,18 +130,18 @@ app._unparsable_cell(
 
     _()
     """,
-    name="_"
+    name="_",
 )
 
 
 @app.cell
 def _(timeit):
     _timer = timeit.Timer(
-        "simplex(key=key, ndim=2, shape=num_samples).block_until_ready()", 
+        "simplex(key=key, ndim=2, shape=num_samples).block_until_ready()",
         setup="simplex(key=key, ndim=2, shape=num_samples)",
         globals=globals(),
     )
-    _ = _timer.autorange(callback=lambda n, t: print(f"Amortised time of {t/n*1e6:>3.0f}us over {n:>4} runs"))
+    _ = _timer.autorange(callback=lambda n, t: print(f"Amortised time of {t / n * 1e6:>3.0f}us over {n:>4} runs"))
     return
 
 
