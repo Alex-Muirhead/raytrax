@@ -3,7 +3,12 @@
     "allow": [
       "Bash(uv run *)",
       "Bash(jj log *)",
-      "Bash(jj bookmark *)"
+      "Bash(jj bookmark *)",
+      "Skill(marimo-pair)",
+      "Bash(bash /home/alex/.claude/skills/marimo-pair/scripts/discover-servers.sh:*)",
+      "Bash(bash /home/alex/.claude/skills/marimo-pair/scripts/execute-code.sh:*)",
+      "Bash(bash /home/alex/.claude/skills/marimo-pair/scripts/discover-servers.sh *)",
+      "Bash(bash /home/alex/.claude/skills/marimo-pair/scripts/execute-code.sh *)"
     ]
   }
 }
