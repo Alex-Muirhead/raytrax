@@ -77,10 +77,12 @@ def _():
         import contextlib
         import io
 
+        mesh_file = mo.watch.file("../cylinder.msh")
+
         # Noisy meshio.read
         f = io.StringIO()
         with contextlib.redirect_stdout(f):
-            input_mesh = meshio.read("../cylinder.msh")
+            input_mesh = meshio.read(mesh_file)
         if stdout := f.getvalue().strip():
             print(stdout)
 
@@ -91,6 +93,12 @@ def _():
 
         num_cells = len(cell_block)
     return cell_block, input_mesh, num_cells, vertices
+
+
+@app.cell
+def _(input_mesh):
+    input_mesh.points
+    return
 
 
 @app.cell
@@ -143,13 +151,14 @@ def _(hot_face_ids, mesh, num_cells, sentinels):
         new_face_energies,
         new_ray_energies,
         new_rays,
+        optical_thickness,
         ray_energies,
         rays,
     )
 
 
 @app.cell
-def _(mesh, new_cell_energies):
+def _(mesh, new_cell_energies, optical_thickness, vertices):
     def _():
         fig, ax = plt.subplots()
 
@@ -157,55 +166,64 @@ def _(mesh, new_cell_energies):
         heating = new_cell_energies / mesh.geometry.cells.volume
         ax.scatter(x, heating, s=1, alpha=0.2, label="Monte-Carlo")
 
-        # Tangent slab: black wall at x = -1/2, absorption only
-        depth = np.linspace(0.0, 1.0, 200)
-        ax.plot(depth - 0.5, 2 * expn(2, depth), c="C1", label="Tangent slab $2E_2(\\kappa x)$")
+        # Tangent slab: black wall at the lower x bound, absorption only
+        x_min, x_max = vertices[:, 0].min(), vertices[:, 0].max()
+        depth = np.linspace(0.0, x_max - x_min, 200)
+        slab = 2 * optical_thickness * expn(2, optical_thickness * depth)
+        ax.plot(x_min + depth, slab, c="C1", label="Tangent slab $2\\kappa E_2(\\kappa x)$")
 
         ax.set_xlabel("x")
         ax.set_ylabel("Volumetric heating")
         ax.legend()
         return ax
 
+
     _()
     return
 
 
 @app.cell
-def _(mesh, new_cell_energies):
+def _(mesh, new_cell_energies, optical_thickness, vertices):
     def _():
         fig, ax = plt.subplots()
 
-        # Volume-weighted mean heating in slabs along x
+        # Volume-weighted mean heating in slabs spanning the axial extent
         x = mesh.geometry.cells.centroid[:, 0]
-        bins = jnp.linspace(-0.5, 0.5, 21)
+        x_min, x_max = vertices[:, 0].min(), vertices[:, 0].max()
+        bins = jnp.linspace(x_min, x_max, 21)
         idx = jnp.digitize(x, bins) - 1
         slab_energy = jnp.zeros(bins.size - 1).at[idx].add(new_cell_energies)
         slab_volume = jnp.zeros(bins.size - 1).at[idx].add(mesh.geometry.cells.volume)
         ax.stairs(slab_energy / slab_volume, bins, label="Monte-Carlo (binned)")
 
-        depth = np.linspace(0.0, 1.0, 200)
-        ax.plot(depth - 0.5, 2 * expn(2, depth), c="C1", label="Tangent slab $2E_2(\\kappa x)$")
+        depth = np.linspace(0.0, x_max - x_min, 200)
+        slab = 2 * optical_thickness * expn(2, optical_thickness * depth)
+        ax.plot(x_min + depth, slab, c="C1", label="Tangent slab $2\\kappa E_2(\\kappa x)$")
 
         ax.set_xlabel("x")
         ax.set_ylabel("Volumetric heating")
         ax.legend()
         return ax
 
+
     _()
     return
 
 
 @app.cell
-def _(mesh, new_cell_energies):
+def _(mesh, new_cell_energies, optical_thickness, vertices):
     def _():
         fig, ax = plt.subplots()
 
-        # Volume-weighted mean heating in radial shells, split by axial slab
+        # Volume-weighted mean heating in radial shells, split by axial slab.
+        # Bin edges come from the vertex bounds, so they follow the mesh dimensions.
         x = mesh.geometry.cells.centroid[:, 0]
         radius = jnp.linalg.vector_norm(mesh.geometry.cells.centroid[:, 1:], axis=-1)
 
-        x_bins = np.array([-0.5, -0.25, 0.0, 0.25, 0.5])
-        r_bins = jnp.linspace(0.0, 1.0, 11)
+        x_min, x_max = vertices[:, 0].min(), vertices[:, 0].max()
+        r_max = np.linalg.norm(vertices[:, 1:], axis=-1).max()
+        x_bins = np.linspace(x_min, x_max, 5)
+        r_bins = jnp.linspace(0.0, r_max, 51)
         idx = (jnp.digitize(x, x_bins) - 1, jnp.digitize(radius, r_bins) - 1)
 
         shape = (x_bins.size - 1, r_bins.size - 1)
@@ -215,8 +233,9 @@ def _(mesh, new_cell_energies):
         for _i, (_lo, _hi) in enumerate(zip(x_bins[:-1], x_bins[1:])):
             ax.stairs(shell_energy[_i] / shell_volume[_i], r_bins, color=f"C{_i}", label=f"${_lo:+.2f} < x < {_hi:+.2f}$")
             # The tangent slab is radially uniform, so compare against its slab mean
-            depth = np.linspace(_lo + 0.5, _hi + 0.5, 50)
-            ax.axhline(np.mean(2 * expn(2, depth)), color=f"C{_i}", ls="--", lw=0.8)
+            depth = np.linspace(_lo - x_min, _hi - x_min, 50)
+            slab = 2 * optical_thickness * expn(2, optical_thickness * depth)
+            ax.axhline(np.mean(slab), color=f"C{_i}", ls="--", lw=0.8)
 
         ax.set_xlabel("r")
         ax.set_ylabel("Volumetric heating")
