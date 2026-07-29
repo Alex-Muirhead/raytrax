@@ -4,8 +4,8 @@ import equinox as eqx
 import jax.numpy as jnp
 import lox
 import numpy as np
-from jaxtyping import Array, Float, Int
 from equinox._misc import default_floating_dtype
+from jaxtyping import Array, Float, Int
 
 
 class ConvexCell(eqx.Module):

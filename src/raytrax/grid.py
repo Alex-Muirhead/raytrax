@@ -1,6 +1,6 @@
-from raytrax.gridtypes import MeshTopology
 import numpy as np
-from raytrax.gridtypes import CellTopology, FaceTopology
+
+from raytrax.gridtypes import CellTopology, FaceTopology, MeshTopology
 
 FACE_DEFINITIONS: dict[str, list[tuple[int, ...]]] = {
     # 2D elements: "faces" are edges.

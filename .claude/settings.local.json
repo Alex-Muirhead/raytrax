@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(uv run *)"
+      "Bash(uv run *)",
+      "Bash(jj log *)",
+      "Bash(jj bookmark *)"
     ]
   }
 }

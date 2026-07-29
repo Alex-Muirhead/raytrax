@@ -6,13 +6,13 @@ app = marimo.App()
 
 @app.cell
 def _():
+    import timeit
+
     import jax
     import jax.numpy as jnp
     import marimo as mo
     import matplotlib.pyplot as plt
-    import timeit
-
-    from matplotlib.patches import Polygon, Circle
+    from matplotlib.patches import Circle, Polygon
     from scipy.interpolate import LinearNDInterpolator
 
     return jax, jnp, plt, timeit
@@ -20,7 +20,7 @@ def _():
 
 @app.cell
 def _():
-    from raytrax.random import sphere, simplex
+    from raytrax.random import simplex, sphere
 
     return simplex, sphere
 

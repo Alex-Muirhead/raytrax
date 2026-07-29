@@ -4,6 +4,8 @@ import equinox as eqx
 import jax
 import numpy as np
 
+from raytrax.intersections import ConvexCell
+
 Array = jax.Array | np.typing.NDArray
 
 
@@ -139,7 +141,7 @@ class Mesh(eqx.Module, IndexingMixin):
         )
 
     @property
-    def cells(self) -> Face:
+    def cells(self) -> Cell:
         return Cell(
             geometry=self.geometry.cells,
             topology=self.topology.cells,
@@ -148,3 +150,13 @@ class Mesh(eqx.Module, IndexingMixin):
     @property
     def verts(self) -> Array:
         return self.geometry.verts
+
+    @property
+    def convex_cells(self) -> ConvexCell:
+        face_geom = self.geometry.faces
+        cell_topo = self.topology.cells
+        # face_signs orients each stored face normal outward from the cell
+        return ConvexCell(
+            normal=face_geom.normal[cell_topo.face_ids] * cell_topo.face_signs[..., None],
+            offset=face_geom.offset[cell_topo.face_ids] * cell_topo.face_signs,
+        )

@@ -4,23 +4,19 @@ __generated_with = "0.23.10"
 app = marimo.App(width="medium")
 
 with app.setup:
-    from copy import replace
-    from functools import partial
-
     import equinox as eqx
     import jax
     import jax.numpy as jnp
-    import lox
     import marimo as mo
     import matplotlib.pyplot as plt
     import meshio
     import numpy as np
     from matplotlib.collections import LineCollection, PolyCollection
 
-    from raytrax.intersections import LinearRay, ConvexCell, crossing
     from raytrax.grid import process_cell_block
-    from raytrax.gridtypes import Mesh, Cell, Face
-    from raytrax.random import sphere, simplex
+    from raytrax.gridtypes import Mesh
+    from raytrax.sampling import select_start
+    from raytrax.transport import trace
 
 
 @app.function
@@ -75,7 +71,8 @@ def _():
         num_cells = width * height
     else:
         # Read an existing mesh
-        import contextlib, io
+        import contextlib
+        import io
 
         # Noisy meshio.read
         f = io.StringIO()
@@ -104,122 +101,32 @@ def _(cell_block, vertices):
 
 @app.cell
 def _(mesh):
-    face_geom = mesh.faces.geometry
     cell_topo = mesh.cells.topology
-
-    convex_cells = ConvexCell(
-        normal=face_geom.normal[cell_topo.face_ids] * cell_topo.face_signs[..., None],
-        offset=face_geom.offset[cell_topo.face_ids] * cell_topo.face_signs,
-    )
-    return cell_topo, convex_cells
+    return (cell_topo,)
 
 
 @app.cell
-def _(num_cells):
-    cell_data = jnp.zeros(num_cells)
-    return
-
-
-@app.cell
-def _(convex_cells):
-    def walking(cell_id: int, ray: LinearRay, mesh: Mesh):
-        cell = convex_cells[cell_id]
-        out_face, distance = crossing(cell=cell, ray=ray)
-        next_cell_id = mesh.cells[cell_id].topology.neighbours[out_face]
-        next_ray = replace(ray, travel=ray.travel+distance)
-        return next_cell_id, next_ray, distance
-
-    return (walking,)
-
-
-@app.cell
-def _(ndim):
-    def select_point(key, cell: Cell, faces: Face, vertices):
-        subcell_key, barycentric_key = jax.random.split(key, num=2)
-        face_id = jax.random.choice(key=subcell_key, a=cell.topology.face_ids, p=cell.geometry.face_weights)
-        vertex_points = vertices[faces[face_id].topology.vertices]
-        vertex_weights = simplex(key=barycentric_key, ndim=ndim)
-        return vertex_weights[0] * cell.geometry.centroid + vertex_weights[1:] @ vertex_points
-
-    return (select_point,)
-
-
-@app.cell
-def _(ndim, num_cells, select_point):
-    def select_start(key, field, mesh: Mesh):
-        key_cell, key_point, key_direction = jax.random.split(key, 3)
-        cell_id = jax.random.choice(key_cell, num_cells, p=field)
-        terminus = select_point(key_point, mesh.cells[cell_id], mesh.faces, mesh.verts)
-        tangent = sphere(key_direction, ndim)
-        # tangent = jnp.array([1.0, 0.0, 0.0])
-        ray = LinearRay(terminus=terminus, tangent=tangent, travel=jnp.zeros(()))
-        return ray, cell_id
-
-    return (select_start,)
-
-
-@app.cell
-def _(Self):
-    class RayState(eqx.Module):
-        energy: jax.Array
-        cell_id: jax.Array
-
-        @classmethod
-        def new(cls, cell_id: jax.Array) -> Self:
-            shape = cell_id.shape
-            return cls(energy=jnp.zeros(shape), cell_id=cell_id)
-
-    return
-
-
-@app.cell
-def _(mesh, num_cells, select_start, walking):
+def _(mesh, num_cells):
     _key = jax.random.key(seed=4)
     key, key_cells, key_rays = jax.random.split(_key, 3)
     num_traces = 500_000
 
     cell_energies = jnp.where(
-        mesh.geometry.cells.centroid[:, 0] < 0, 
-        mesh.geometry.cells.volume, 
+        mesh.geometry.cells.centroid[:, 0] < 0,
+        mesh.geometry.cells.volume,
         0.0,
     )
 
     keys = jax.random.split(key, num_traces)
     rays, cell_ids = jax.vmap(jax.jit(select_start), in_axes=(0, None, None))(keys, cell_energies, mesh)
 
-
-    # NOTE: Divide by 2 since only half the volume is "hot"
-
-    total_energy = cell_energies.sum()
     num_rays_per_cell = jnp.zeros(num_cells).at[cell_ids].add(1.0)
     ray_energies = (cell_energies / num_rays_per_cell)[cell_ids]
-    # ray_energies = jnp.full(num_traces, fill_value=total_energy / num_traces)
-    # cell_energies = cell_energies.at[cell_ids].subtract(ray_energies)
-    cell_energies = jnp.zeros_like(cell_energies)
-    optical_thickess = 1.0
+    optical_thickness = 1.0
 
-    def step(cell_id, ray, ray_energy, mesh):
-        new_cell_id, new_ray, distance = walking(cell_id, ray, mesh)
-        distance = jnp.where(cell_id == -1, 0.0, distance)
-        ray = replace(ray, travel=jnp.where(cell_id == -1, ray.travel, new_ray.travel))
-        new_cell_id = jnp.where(cell_id == -1, -1, new_cell_id)
-        optical_distance = optical_thickess * distance
-        energy_decay = ray_energy * (1 - jnp.exp(-optical_distance))
-        new_ray_energy = ray_energy * jnp.exp(-optical_distance)
-        return new_cell_id, ray, new_ray_energy, energy_decay
-
-    def collect_step(cell_ids, rays, ray_energies, cell_energies, mesh):
-        new_cell_ids, rays, ray_energies, energy_dropped = jax.vmap(jax.jit(step), in_axes=(0, 0, 0, None))(cell_ids, rays, ray_energies, mesh)
-        # This *must* be *outside* of the vmap, otherwise all HELL breaks loose with allocs!
-        cell_energies = cell_energies.at[cell_ids].add(energy_dropped)
-        return new_cell_ids, rays, ray_energies, cell_energies, mesh
-
-    def wrapped_collect_step(i, state):
-        return collect_step(*state)
-
-    init_state = (cell_ids, rays, ray_energies, cell_energies, mesh)
-    final_state = jax.lax.fori_loop(0, 100, wrapped_collect_step, init_state)
-    new_cell_ids, new_rays, new_ray_energies, new_cell_energies, _ = final_state
+    new_cell_ids, new_rays, new_ray_energies, new_cell_energies = trace(
+        cell_ids, rays, ray_energies, mesh, optical_thickness, num_steps=100
+    )
     return new_cell_energies, new_ray_energies, new_rays, ray_energies, rays
 
 
