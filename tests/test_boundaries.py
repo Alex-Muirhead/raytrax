@@ -1,3 +1,5 @@
+from copy import replace
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -8,7 +10,7 @@ from raytrax.grid import apply_boundaries, match_faces
 from raytrax.gridtypes import Mesh
 from raytrax.intersections import LinearRay
 from raytrax.sampling import cosine_hemisphere, select_emission
-from raytrax.transport import trace
+from raytrax.transport import Boundary, boundary_kinds, trace, walking
 
 
 def test_match_faces():
@@ -80,10 +82,60 @@ def test_trace_accumulates_on_wall():
         jnp.ones(1),
         mesh,
         optical_thickness=1.0,
-        wall_sentinel=sentinels["wall"],
+        kinds=boundary_kinds(sentinels, {"wall": Boundary.WALL}),
         num_steps=10,
     )
     assert cell_ids[0] == sentinels["wall"]
     assert remaining[0] == approx(0.0)
     assert face_deposits[right[0]] == approx(np.exp(-1.5))  # 0.5 + 1.0 travelled
     assert cell_deposits.sum() + face_deposits.sum() == approx(1.0)
+
+
+def test_symmetry_reflects_within_cell():
+    mesh = two_quad_mesh()
+    topology = jax.tree.map(np.asarray, mesh.topology)
+    top = match_faces(topology.faces, np.array([[3, 4]]))
+    topology, sentinels = apply_boundaries(topology, {"mirror": top})
+    mesh = jax.tree.map(jnp.asarray, Mesh(geometry=mesh.geometry, topology=topology))
+    kinds = boundary_kinds(sentinels, {"mirror": Boundary.SYMMETRY})
+
+    # Aimed up and to the right, hitting the mirror at (0.75, 1.0)
+    tangent = jnp.array([1.0, 2.0]) / jnp.sqrt(5.0)
+    ray = LinearRay(terminus=jnp.array([0.5, 0.5]), tangent=tangent, travel=jnp.zeros(()))
+
+    cell_id, ray, distance, exit_face = walking(jnp.array(0), ray, mesh, kinds)
+    assert cell_id == 0  # Stays in the cell it reflected within
+    assert exit_face == top[0]
+    assert distance == approx(np.sqrt(5) / 4)
+    assert np.asarray(ray.terminus) == approx([0.75, 1.0])
+    assert np.asarray(ray.tangent) == approx(np.array([1.0, -2.0]) / np.sqrt(5))
+    # The mirror is not hit again; the ray leaves through the right edge
+    cell_id, ray, distance, exit_face = walking(cell_id, ray, mesh, kinds)
+    assert cell_id == 1
+    assert np.asarray(ray.terminus) == approx([1.0, 0.5])
+    assert ray.travel == approx(np.sqrt(5) / 2)
+
+
+def test_trace_conserves_energy_with_symmetry():
+    mesh = two_quad_mesh()
+    topology = jax.tree.map(np.asarray, mesh.topology)
+    mirror = match_faces(topology.faces, np.array([[3, 4], [4, 5]]))  # Both top edges
+    right = match_faces(topology.faces, np.array([[2, 5]]))
+    topology, sentinels = apply_boundaries(topology, {"mirror": mirror, "wall": right})
+    mesh = jax.tree.map(jnp.asarray, Mesh(geometry=mesh.geometry, topology=topology))
+    kinds = boundary_kinds(sentinels, {"mirror": Boundary.SYMMETRY, "wall": Boundary.WALL})
+
+    keys = jax.random.split(jax.random.key(seed=2), 50)
+    rays = LinearRay(
+        terminus=jnp.full((50, 2), 0.5),
+        tangent=jax.vmap(lambda key: jax.random.normal(key, (2,)))(keys),
+        travel=jnp.zeros(50),
+    )
+    rays = replace(rays, tangent=rays.tangent / jnp.linalg.vector_norm(rays.tangent, axis=-1, keepdims=True))
+    ray_energies = jnp.ones(50)
+
+    cell_ids, rays, remaining, cell_deposits, face_deposits = trace(
+        jnp.zeros(50, dtype=int), rays, ray_energies, mesh, optical_thickness=1.0, kinds=kinds, num_steps=20
+    )
+    assert cell_deposits.sum() + face_deposits.sum() + remaining.sum() == approx(50.0)
+    assert np.all(np.asarray(face_deposits[mirror]) == 0.0)  # A mirror absorbs nothing

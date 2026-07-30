@@ -28,6 +28,13 @@ class ConvexCell(eqx.Module):
 
 
 class LinearRay(eqx.Module):
+    """A half-line from `terminus` along `tangent`, having already flown `travel`.
+
+    `terminus` advances to each crossing point as the ray is walked, so ray
+    parameters stay local to the current cell. `travel` accumulates the total
+    path length and is never read by the geometry.
+    """
+
     terminus: Float[Array, "... ndim"]
     tangent: Float[Array, "... ndim"]
     travel: Float[Array, "..."]
@@ -42,10 +49,6 @@ class LinearRay(eqx.Module):
             tangent=self.tangent[idx],
             travel=self.travel[idx],
         )
-
-    @property
-    def p(self) -> Float[Array, "... ndim"]:
-        return self.terminus + self.travel[..., None] * self.tangent
 
 
 class HyperbolicRay(eqx.Module):
@@ -98,9 +101,9 @@ def crossing(cell: ConvexCell, ray: LinearRay, epsilon: float = 0.0) -> tuple[In
     absolute_distance = cell.normal @ ray.terminus - cell.offset
     alignment = cell.normal @ ray.tangent
     absolute_travel = -absolute_distance / alignment
-    # Take minimum value greater than current travel
+    # Take the nearest of the faces the ray is heading out through
     absolute_travel = jnp.where(alignment > epsilon, absolute_travel, jnp.nan)
     crossing_index = jnp.nanargmin(absolute_travel)
     # We can use jnp.nanmin, but in case we need to modify the index, we can do this!
-    crossing_travel = absolute_travel[crossing_index] - ray.travel
+    crossing_travel = absolute_travel[crossing_index]
     return crossing_index, crossing_travel

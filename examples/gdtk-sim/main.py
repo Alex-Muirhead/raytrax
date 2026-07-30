@@ -371,8 +371,14 @@ def main():
 
         cells = mygrid.get_cells(cell_ids)
         crossings, travels = crossing(cells, rays)
-        cummulative = cummulative.at[cell_ids].add(jnp.where(active, travels, 0.0))
-        rays = copy.replace(rays, travel=rays.travel + jnp.where(active, travels, 0.0))
+        distances = jnp.where(active, travels, 0.0)
+        cummulative = cummulative.at[cell_ids].add(distances)
+        # The ray advances to the crossing point; travel is the total path length
+        rays = copy.replace(
+            rays,
+            terminus=rays.terminus + distances[..., None] * rays.tangent,
+            travel=rays.travel + distances,
+        )
 
         new_cell_ids = mygrid.topology.cell_adjacency[cell_ids, crossings]
         active &= new_cell_ids != -1
@@ -387,7 +393,7 @@ def main():
     runner = partial(jax.lax.while_loop, cond_fun, body_fun, initial_state)
     final_rays, final_accumulation, final_cell_ids, _ = runner()
 
-    print(final_rays.p)
+    print(final_rays.terminus)
     print(final_cell_ids)
 
 

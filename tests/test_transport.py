@@ -7,7 +7,7 @@ from pytest import approx
 from raytrax.grid import process_cell_block
 from raytrax.gridtypes import Mesh
 from raytrax.intersections import LinearRay
-from raytrax.transport import EXTERIOR, trace, walking
+from raytrax.transport import EXTERIOR, boundary_kinds, trace, walking
 
 
 def two_quad_mesh() -> Mesh:
@@ -44,20 +44,22 @@ def test_convex_cells_contain_centroids():
 
 def test_walking_crosses_to_neighbour_then_exterior():
     mesh = two_quad_mesh()
+    kinds = boundary_kinds({}, {})
     ray = LinearRay(
         terminus=jnp.array([0.5, 0.5]),
         tangent=jnp.array([1.0, 0.0]),
         travel=jnp.zeros(()),
     )
-    next_cell, ray, distance, exit_face = walking(jnp.array(0), ray, mesh)
+    next_cell, ray, distance, exit_face = walking(jnp.array(0), ray, mesh, kinds)
     assert next_cell == 1
     assert distance == approx(0.5)
-    next_cell, ray, distance, exit_face = walking(next_cell, ray, mesh)
+    assert np.asarray(ray.terminus) == approx([1.0, 0.5])
+    next_cell, ray, distance, exit_face = walking(next_cell, ray, mesh, kinds)
     assert next_cell == EXTERIOR
     assert distance == approx(1.0)
     assert ray.travel == approx(1.5)
     # A terminated ray stays put and remains terminated
-    next_cell, ray, distance, exit_face = walking(next_cell, ray, mesh)
+    next_cell, ray, distance, exit_face = walking(next_cell, ray, mesh, kinds)
     assert next_cell == EXTERIOR
     assert distance == approx(0.0)
     assert ray.travel == approx(1.5)
@@ -73,7 +75,7 @@ def test_trace_conserves_energy():
     cell_ids = jnp.array([0, 0])
     ray_energies = jnp.array([1.0, 2.0])
     cell_ids, rays, remaining, deposited, face_deposits = trace(
-        cell_ids, rays, ray_energies, mesh, optical_thickness=1.0, wall_sentinel=-2, num_steps=10
+        cell_ids, rays, ray_energies, mesh, optical_thickness=1.0, kinds=boundary_kinds({}, {}), num_steps=10
     )
     assert np.all(cell_ids == EXTERIOR)
     assert np.all(np.asarray(face_deposits) == 0.0)  # No tagged wall

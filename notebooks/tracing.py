@@ -17,7 +17,7 @@ with app.setup:
     from raytrax.grid import apply_boundaries, boundary_groups, match_faces, process_cell_block
     from raytrax.gridtypes import Mesh
     from raytrax.sampling import select_emission
-    from raytrax.transport import trace
+    from raytrax.transport import Boundary, boundary_kinds, trace
 
 
 @app.function
@@ -125,7 +125,20 @@ def _(boundaries):
 
 
 @app.cell
-def _(hot_face_ids, mesh, num_cells, sentinels):
+def _(sentinels):
+    # Behaviour of each tagged boundary group. Switch the lateral surface to
+    # Boundary.SYMMETRY to mirror rays back in, which recovers the 1D tangent-slab
+    # profile at every radius (needs num_steps >= 200 to converge).
+    lateral_kind = Boundary.ESCAPE
+    kinds = boundary_kinds(
+        sentinels,
+        {"hot_end": Boundary.WALL, "wall": Boundary.WALL, "lateral": lateral_kind},
+    )
+    return (kinds,)
+
+
+@app.cell
+def _(hot_face_ids, kinds, mesh, num_cells):
     _key = jax.random.key(seed=4)
     key, key_cells, key_rays = jax.random.split(_key, 3)
     num_traces = 5_000_000
@@ -144,10 +157,11 @@ def _(hot_face_ids, mesh, num_cells, sentinels):
     optical_thickness = 1.0
 
     new_cell_ids, new_rays, new_ray_energies, new_cell_energies, new_face_energies = trace(
-        cell_ids, rays, ray_energies, mesh, optical_thickness, sentinels["wall"], num_steps=100
+        cell_ids, rays, ray_energies, mesh, optical_thickness, kinds, num_steps=100
     )
     return (
         new_cell_energies,
+        new_cell_ids,
         new_face_energies,
         new_ray_energies,
         new_rays,
@@ -177,8 +191,8 @@ def _(mesh, new_cell_energies, optical_thickness, vertices):
         ax.legend()
         return ax
 
-
-    _()
+    # This plot takes too long to run, there are too many points. We don't need to plot them all.
+    # _()
     return
 
 
@@ -232,10 +246,11 @@ def _(mesh, new_cell_energies, optical_thickness, vertices):
 
         for _i, (_lo, _hi) in enumerate(zip(x_bins[:-1], x_bins[1:])):
             ax.stairs(shell_energy[_i] / shell_volume[_i], r_bins, color=f"C{_i}", label=f"${_lo:+.2f} < x < {_hi:+.2f}$")
-            # The tangent slab is radially uniform, so compare against its slab mean
-            depth = np.linspace(_lo - x_min, _hi - x_min, 50)
-            slab = 2 * optical_thickness * expn(2, optical_thickness * depth)
-            ax.axhline(np.mean(slab), color=f"C{_i}", ls="--", lw=0.8)
+            # The tangent slab is radially uniform, so compare against its slab mean.
+            # Integrating 2 kappa E_2 exactly gives 2 (E_3(a) - E_3(b)) / (b - a).
+            _depth = optical_thickness * (np.array([_lo, _hi]) - x_min)
+            _slab = 2 * (expn(3, _depth[0]) - expn(3, _depth[1])) / (_hi - _lo)
+            ax.axhline(_slab, color=f"C{_i}", ls="--", lw=0.8)
 
         ax.set_xlabel("r")
         ax.set_ylabel("Volumetric heating")
@@ -248,12 +263,24 @@ def _(mesh, new_cell_energies, optical_thickness, vertices):
 
 
 @app.cell
-def _(new_cell_energies, new_face_energies, new_ray_energies, ray_energies):
-    # Conservation: gas + wall + still-carried (escaped) energy
-    print(f"input:   {ray_energies.sum():.6f}")
-    print(f"gas:     {new_cell_energies.sum():.6f}")
-    print(f"wall:    {new_face_energies.sum():.6f}")
-    print(f"escaped: {new_ray_energies.sum():.6f}")
+def _(
+    new_cell_energies,
+    new_cell_ids,
+    new_face_energies,
+    new_ray_energies,
+    new_rays,
+    ray_energies,
+):
+    # Conservation: gas + wall + escaped + still in flight.
+    # A non-negative final cell id means the ray ran out of steps inside the mesh,
+    # which symmetry boundaries make far more likely.
+    in_flight = new_cell_ids >= 0
+    print(f"input:     {ray_energies.sum():.6f}")
+    print(f"gas:       {new_cell_energies.sum():.6f}")
+    print(f"wall:      {new_face_energies.sum():.6f}")
+    print(f"escaped:   {jnp.where(in_flight, 0.0, new_ray_energies).sum():.6f}")
+    print(f"in flight: {jnp.where(in_flight, new_ray_energies, 0.0).sum():.6f}")
+    print(f"rays in flight: {in_flight.mean():.2%}, max travel: {new_rays.travel.max():.3f}")
     return
 
 
@@ -262,9 +289,10 @@ def _(mesh_topo, new_rays, rays, vertices):
     def _():
         fig, ax = plt.subplots()
 
-        # Project onto the xy-plane
+        # Project onto the xy-plane. With symmetry boundaries the ray reflects, so
+        # this chord is start-to-finish rather than the path actually flown.
         edges = LineCollection(vertices[mesh_topo.faces.vertices][..., :2], linewidths=0.5, colors="k")
-        paths = LineCollection(np.stack([rays.p, new_rays.p], axis=1)[..., :2], cmap="viridis")
+        paths = LineCollection(np.stack([rays.terminus, new_rays.terminus], axis=1)[..., :2], cmap="viridis")
         paths.set_array(new_rays.travel)
 
         ax.add_collection(paths)
